@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ACMS Metadata Config — key-option ladder.
+
+  Only classes that have defined key options need to appear here.
+  Classes without options are simply not listed.
+
+  Nesting rule:
+    <class name="PLC">
+      <key name="slave">          ← PLC has key "slave"
+        <key name="pumps"/>       ← values of "slave" that become classes
+        <key name="pipes"/>         inherit these as their key options
+        ...
+      </key>
+    </class>
+
+  If a nested key itself has children, that sub-level is applied the same
+  way — values typed for that key inherit its children as key options.
+-->
+<Config>
+
+  <!-- Root classes without key options — appear in Class dropdown only -->
+  <class name="Fault_Code"/>
+  <class name="dataType"/>
+
+  <!-- Card mirrors PLC: "name" key holds card instances (like PLC's "slave").
+       Each instance inherits fn_id, fn_name, numPins, Start_Addr as its sub-keys. -->
+  <class name="Card">
+    <key name="Label">
+      <key name="ID"/>
+      <key name="Name"/>
+      <key name="numPins"/>
+      <key name="Start_Addr"/>
+    </key>
+  </class>
+
+  <!-- Classes WITH key options — also drive the Key dropdown -->
+  <class name="PLC">
+    <key name="type"/>
+    <key name="numSlots"/>
+    <key name="slave">
+      <key name="ID"/>
+      <key name="class">
+        <key name="variable">
+          <key name="dataType"/>
+          <key name="unit"/>
+          <key name="Fault_Code"/>
+          <key name="Card"/>
+        </key>
+      </key>
+    </key>
+  </class>
+
+</Config>

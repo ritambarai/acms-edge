@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ACMS Metadata</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===== PAGE HEADER (full width, centered) ===== -->
+<div class="page-header">
+  <h1>ACMS Metadata</h1>
+</div>
+
+<!-- ===== TWO-COLUMN LAYOUT ===== -->
+<div class="two-col">
+
+  <!-- ===== LEFT COLUMN: controls + table ===== -->
+  <div class="col-left">
+
+    <!-- Controls -->
+    <div class="left-controls">
+
+      <!-- Row 1: filename + Save -->
+      <div class="filename-row">
+        <div class="field">
+          <label for="inp-filename">Filename</label>
+          <input id="inp-filename" type="text" value="field_value.xml" placeholder="filename.xml"
+                 onkeydown="if(event.key==='Enter') saveXML()">
+          <span class="error-msg" id="err-filename"></span>
+        </div>
+        <button id="save-btn" onclick="saveXML()">Save</button>
+      </div>
+
+      <!-- Row 2: Class / Key / Value + Insert -->
+      <div class="entry-area">
+        <div class="field">
+          <label for="inp-class">Class</label>
+          <input id="inp-class" type="text" list="class-list" placeholder="e.g. Fault_Code"
+                 oninput="updateKeyField(this.value.trim())"
+                 onkeydown="if(event.key==='Enter') focusKeyField()">
+          <datalist id="class-list"></datalist>
+          <span class="error-msg" id="err-class"></span>
+        </div>
+        <div class="field">
+          <label for="inp-key">Key</label>
+          <input id="inp-key" type="text" placeholder="e.g. mac"
+                 oninput="updateValueField(this.value.trim()); checkValueLookup()"
+                 onkeydown="if(event.key==='Enter') focusNext('inp-value')">
+          <select id="sel-key" style="display:none"
+                  onchange="updateValueField(this.value); checkValueLookup()"
+                  onkeydown="if(event.key==='Enter') focusNext('inp-value')">
+            <option value="">— select key —</option>
+          </select>
+          <span class="error-msg" id="err-key"></span>
+        </div>
+        <div class="field">
+          <label for="inp-value">Value</label>
+          <input id="inp-value" type="text" list="val-list" placeholder="e.g. 101"
+                 oninput="checkValueLookup()"
+                 onkeydown="if(event.key==='Enter') insertEntry()">
+          <datalist id="val-list"></datalist>
+          <span class="error-msg" id="err-value"></span>
+        </div>
+        <button id="insert-btn" onclick="insertEntry()">Insert</button>
+      </div>
+
+      <div id="status-msg"></div>
+    </div><!-- /left-controls -->
+
+    <!-- Table -->
+    <div class="content">
+      <h3 class="section-title">Metadata Entries</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="row-actions-left"></th>
+              <th>Class</th>
+              <th>Key</th>
+              <th>Value</th>
+              <th class="row-actions"></th>
+            </tr>
+          </thead>
+          <tbody id="meta-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /col-left -->
+
+  <!-- ===== RIGHT COLUMN: load + hierarchy ===== -->
+  <div class="col-right">
+
+    <!-- Load row -->
+    <div class="load-row">
+      <span class="load-label">Load:</span>
+      <input type="file" id="xml-upload" accept=".xml" onchange="handleFileUpload(event)">
+      <select id="xml-dropdown" onchange="handleDropdownSelect(this)">
+        <option value="">— select XML —</option>
+      </select>
+    </div>
+
+    <!-- Hierarchy panel -->
+    <div class="hierarchy-panel">
+      <h3 class="section-title">Object Hierarchy</h3>
+      <div id="hierarchy" class="h-container"></div>
+    </div>
+
+  </div><!-- /col-right -->
+
+</div><!-- /two-col -->
+
+<!-- ===== UNSAVED MODAL ===== -->
+<div id="modal-overlay" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <p class="modal-msg">You have unsaved changes.<br>What would you like to do?</p>
+    <div class="modal-btns">
+      <button id="modal-save-btn"     class="modal-btn primary">Save</button>
+      <button id="modal-nosave-btn"   class="modal-btn danger">Don't Save</button>
+      <button id="modal-cancel-btn"   class="modal-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

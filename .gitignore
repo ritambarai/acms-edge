@@ -1,2 +1,7 @@
 .claude/
-master-metadata/
+master-metadata/.git/
+master-metadata/.git_bak/
+master-metadata/.claude/
+acms-esp/.git
+acms-esp/.git_bak/
+acms-esp/
