@@ -45,13 +45,10 @@
         <key name="Fault_Code"/>
         <key name="Card"/>
       </key>
-      <key name="field"/>
-      <key name="variables"/>
     </key>
     <key name="node">
       <key name="ID"/>
       <key name="numSlots"/>
-      <key name="field"/>
     </key>
   </class>
 
