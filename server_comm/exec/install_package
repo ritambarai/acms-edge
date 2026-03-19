@@ -1,0 +1,244 @@
+#!/bin/sh
+#
+# install_package
+#
+# Downloads an opkg (.ipk) package from a URL, verifies its format,
+# stops system daemons, installs files, runs the embedded install.sh,
+# updates board_state with the next stateCode, then restarts daemons.
+#
+# opkg structure expected:
+#   ar archive containing:
+#     data.tar.gz    — files to install (paths are absolute destinations)
+#     control.tar.gz — metadata; may include install.sh
+#
+# install.sh contract:
+#   - Runs after files are placed
+#   - May write stateCode=<N> to $ACMS_BOARD_STATE to advance the lifecycle
+#   - If it does not, install_package defaults stateCode to 0 (Running)
+#   - stateCode 7 (OTA) is always reset to 0 — OTA is a one-shot state
+#   - Must exit 0 on success, non-zero on failure
+#
+# On any error:
+#   - Rolls back installed files to pre-install state
+#   - Writes errorType and message to /etc/acms/install_error
+#   - Adds filePath=/etc/acms/install_error to board_state
+#   - Restarts daemons before exiting
+#
+# Usage:
+#   install_package <url>
+
+set -u
+
+URL="${1:-}"
+
+ACMS_DIR="/etc/acms"
+BOARD_STATE="$ACMS_DIR/board_state"
+INSTALL_ERROR="$ACMS_DIR/install_error"
+TMP_DIR="/tmp/acms_pkg_$$"
+PKG_FILE="$TMP_DIR/package.ipk"
+EXTRACT_DIR="$TMP_DIR/extract"
+DATA_DIR="$EXTRACT_DIR/data"
+CTRL_DIR="$EXTRACT_DIR/control"
+BACKUP_DIR="$TMP_DIR/backup"
+INSTALLED_LIST="$TMP_DIR/installed"
+DAEMON_LIST="$TMP_DIR/daemons"
+
+# Look up OTA stateCode by key name from state_table so the value stays in sync
+# with the rest of the system.  Falls back to 7 if state_table is unavailable.
+STATE_TABLE="$ACMS_DIR/state_table"
+OTA_STATE_CODE=$(awk -F= '/^\[stateCode\]/{in_sc=1;next} /^\[/{in_sc=0} in_sc && /^OTA=/{print $2;exit}' \
+    "$STATE_TABLE" 2>/dev/null)
+OTA_STATE_CODE="${OTA_STATE_CODE:-6}"
+
+# ── cleanup on exit ───────────────────────────────────────────────────────────
+
+cleanup() { rm -rf "$TMP_DIR"; }
+trap cleanup EXIT
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+write_error() {
+    _type="$1"; _msg="$2"
+    printf 'errorType=%s\nmessage=%s\n' "$_type" "$_msg" > "$INSTALL_ERROR"
+    # preserve stateCode in board_state, point filePath at install_error
+    _sc=$(grep '^stateCode=' "$BOARD_STATE" 2>/dev/null | head -1 || echo 'stateCode=0')
+    printf '%s\nfilePath=%s\n' "$_sc" "$INSTALL_ERROR" > "$BOARD_STATE"
+    echo "[install_package] ERROR ($_type): $_msg" >&2
+}
+
+die() { write_error "$1" "$2"; exit 1; }
+
+stop_daemons() {
+    echo "[install_package] stopping system daemons"
+    systemctl list-units --type=service --state=running --no-legend --plain \
+        2>/dev/null \
+        | awk '{print $1}' \
+        | grep -v -E '^(systemd|dbus\.service|udev|ssh|networking|serial-getty|getty)' \
+        > "$DAEMON_LIST" || true
+    while IFS= read -r _svc; do
+        systemctl stop "$_svc" 2>/dev/null || true
+    done < "$DAEMON_LIST"
+}
+
+start_daemons() {
+    echo "[install_package] restarting system daemons"
+    while IFS= read -r _svc; do
+        systemctl start "$_svc" 2>/dev/null || true
+    done < "$DAEMON_LIST"
+}
+
+rollback() {
+    _msg="$1"
+    echo "[install_package] rolling back: $_msg" >&2
+    if [ -f "$INSTALLED_LIST" ]; then
+        while IFS= read -r _dest; do
+            _bak="$BACKUP_DIR$_dest"
+            if [ -f "$_bak" ]; then
+                cp -p "$_bak" "$_dest" 2>/dev/null || true   # restore original
+            else
+                rm -f "$_dest"                                # was new — remove
+            fi
+        done < "$INSTALLED_LIST"
+    fi
+    start_daemons
+    write_error "install_failed" "$_msg"
+}
+
+# ── validate args ─────────────────────────────────────────────────────────────
+
+if [ -z "$URL" ]; then
+    echo "Usage: $0 <url>" >&2
+    exit 1
+fi
+
+mkdir -p "$TMP_DIR" "$EXTRACT_DIR" "$DATA_DIR" "$CTRL_DIR" "$BACKUP_DIR"
+touch "$INSTALLED_LIST" "$DAEMON_LIST"
+
+# ── 1. download ───────────────────────────────────────────────────────────────
+
+echo "[install_package] downloading: $URL"
+if ! wget -q --timeout=60 -O "$PKG_FILE" "$URL"; then
+    die "download_failed" "wget failed for: $URL"
+fi
+
+# ── 2. verify opkg format ─────────────────────────────────────────────────────
+
+# Standard .ipk is an ar archive — magic bytes are "!<arch>"
+if ! dd if="$PKG_FILE" bs=1 count=7 2>/dev/null | grep -q '!<arch>'; then
+    rm -f "$PKG_FILE"
+    die "invalid_package" "file is not a valid opkg (.ipk) — wrong format: $URL"
+fi
+
+if ! ar t "$PKG_FILE" 2>/dev/null | grep -q '^data\.tar'; then
+    rm -f "$PKG_FILE"
+    die "invalid_package" "opkg is missing data archive: $URL"
+fi
+
+echo "[install_package] package verified as opkg"
+
+# ── 3. extract package ────────────────────────────────────────────────────────
+
+( cd "$EXTRACT_DIR" && ar x "$PKG_FILE" ) || \
+    die "extract_failed" "could not extract opkg archive"
+
+DATA_ARCHIVE=$(find "$EXTRACT_DIR" -maxdepth 1 -name 'data.tar*' | head -1)
+CTRL_ARCHIVE=$(find "$EXTRACT_DIR" -maxdepth 1 -name 'control.tar*' | head -1)
+
+[ -z "$DATA_ARCHIVE" ] && die "extract_failed" "no data archive found in package"
+
+tar -xf "$DATA_ARCHIVE" -C "$DATA_DIR" || \
+    die "extract_failed" "failed to extract data archive"
+
+if [ -n "$CTRL_ARCHIVE" ]; then
+    tar -xf "$CTRL_ARCHIVE" -C "$CTRL_DIR" 2>/dev/null || true
+fi
+
+# locate install.sh — prefer control/, then data root
+INSTALL_SH=""
+if   [ -f "$CTRL_DIR/install.sh" ]; then INSTALL_SH="$CTRL_DIR/install.sh"
+elif [ -f "$DATA_DIR/install.sh"  ]; then INSTALL_SH="$DATA_DIR/install.sh"
+fi
+
+# ── 4. stop daemons ───────────────────────────────────────────────────────────
+
+stop_daemons
+
+# ── 5. backup and install data files ─────────────────────────────────────────
+
+echo "[install_package] installing files"
+
+find "$DATA_DIR" -type f | while IFS= read -r _src; do
+    _dest="${_src#"$DATA_DIR"}"
+    [ -z "$_dest" ] && continue
+    [ "$_dest" = "/install.sh" ] && continue    # not a payload file
+
+    # backup existing file for rollback
+    if [ -f "$_dest" ]; then
+        _bakdir="$BACKUP_DIR$(dirname "$_dest")"
+        mkdir -p "$_bakdir"
+        cp -p "$_dest" "$BACKUP_DIR$_dest"
+    fi
+
+    echo "$_dest" >> "$INSTALLED_LIST"
+
+    mkdir -p "$(dirname "$_dest")"
+    if ! cp -p "$_src" "$_dest"; then
+        rollback "failed to copy file to: $_dest"
+        exit 1
+    fi
+done || { rollback "file installation loop failed"; exit 1; }
+
+echo "[install_package] files installed"
+
+# ── 6. run install.sh ─────────────────────────────────────────────────────────
+
+if [ -n "$INSTALL_SH" ]; then
+    echo "[install_package] running install.sh"
+    chmod +x "$INSTALL_SH"
+
+    # export board_state path so install.sh can write stateCode directly
+    export ACMS_BOARD_STATE="$BOARD_STATE"
+
+    if ! "$INSTALL_SH"; then
+        rollback "install.sh exited with error"
+        exit 1
+    fi
+
+    echo "[install_package] install.sh completed"
+fi
+
+# ── 7. determine and write final stateCode ───────────────────────────────────
+
+# Read whatever stateCode is currently in board_state (install.sh may have set it)
+_sc=$(grep '^stateCode=' "$BOARD_STATE" 2>/dev/null | head -1 | cut -d= -f2)
+
+# Default to 0 if not set
+if [ -z "$_sc" ]; then
+    _sc=0
+    echo "[install_package] no stateCode in board_state, defaulting to 0 (Running)"
+fi
+
+# OTA (7) is a one-shot state — reset to 0 only if no filePath is set
+# (filePath present means an error was logged; leave state for scheduler to handle)
+if [ "$_sc" = "$OTA_STATE_CODE" ]; then
+    if grep -q '^filePath=' "$BOARD_STATE" 2>/dev/null; then
+        echo "[install_package] stateCode is OTA but filePath is set (error state) — not resetting"
+    else
+        echo "[install_package] stateCode is OTA ($OTA_STATE_CODE), no error — resetting to 0 (Running)"
+        _sc=0
+    fi
+fi
+
+printf 'stateCode=%s\n' "$_sc" > "$BOARD_STATE"
+echo "[install_package] board_state → stateCode=$_sc"
+
+# ── 8. cleanup redundant files and restart daemons ───────────────────────────
+
+echo "[install_package] removing temporary package files"
+rm -f "$PKG_FILE"
+rm -rf "$EXTRACT_DIR" "$BACKUP_DIR"
+
+start_daemons
+
+echo "[install_package] installation complete (stateCode=$_sc)"
+exit 0

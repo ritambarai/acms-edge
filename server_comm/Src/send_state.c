@@ -250,8 +250,32 @@ static int extract_json_uint(const char *json, const char *key, unsigned int *ou
 }
 
 /*
+ * Scan JSON body for "key": "<string>" and copy value into out.
+ * Returns -1 if not found or not a quoted string.
+ */
+static int extract_json_str(const char *json, const char *key,
+                             char *out, size_t out_max)
+{
+    char needle[128];
+    snprintf(needle, sizeof(needle), "\"%s\":", key);
+    const char *p = strstr(json, needle);
+    if (!p) return -1;
+    p += strlen(needle);
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p != '"') return -1;
+    p++;
+    size_t i = 0;
+    while (*p && *p != '"' && i < out_max - 1) {
+        if (*p == '\\') p++;   /* skip escape, take next char literally */
+        out[i++] = *p++;
+    }
+    out[i] = '\0';
+    return (*p == '"') ? 0 : -1;
+}
+
+/*
  * Write key=value pairs from the server JSON response to SERVER_RESPONSE.
- * Currently extracts stateCode; extend as the server API grows.
+ * Extracts stateCode (required) and url (optional).
  */
 static void write_server_response(const char *body)
 {
@@ -261,6 +285,9 @@ static void write_server_response(const char *body)
         return;
     }
 
+    char url[512];
+    int has_url = extract_json_str(body, "url", url, sizeof(url));
+
     char tmp[] = "/etc/acms/.server_response.XXXXXX";
     int fd = mkstemp(tmp);
     if (fd < 0) { perror("mkstemp"); return; }
@@ -269,6 +296,8 @@ static void write_server_response(const char *body)
     if (!f) { perror("fdopen"); close(fd); unlink(tmp); return; }
 
     fprintf(f, "stateCode=%u\n", next_sc);
+    if (has_url == 0 && url[0] != '\0')
+        fprintf(f, "url=%s\n", url);
     fclose(f);
 
     chmod(tmp, 0640);

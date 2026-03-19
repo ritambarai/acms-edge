@@ -2,7 +2,7 @@ CC      = $(CROSS)gcc
 CFLAGS  = -Wall -Wextra -O2 -static
 SRC     = Src
 INC     = Inc
-BIN     = bin
+BIN     = exec
 TARGETS = $(BIN)/core_id $(BIN)/send_state $(BIN)/server_scheduler $(BIN)/state_wait
 
 # state_wait durations (seconds)

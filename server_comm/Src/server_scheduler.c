@@ -37,8 +37,9 @@
 #define BOARD_STATE      "/etc/acms/board_state"
 #define SERVER_RESPONSE  "/etc/acms/server_response"
 #define STATE_TABLE      "/etc/acms/state_table"
-#define SEND_STATE_BIN   "/usr/local/bin/send_state"
-#define BIN_PREFIX       "/usr/local/bin/"
+#define SEND_STATE_BIN        "/usr/local/bin/send_state"
+#define INSTALL_PACKAGE_BIN   "/usr/local/bin/install_package"
+#define BIN_PREFIX            "/usr/local/bin/"
 
 #define KV_MAX   32
 #define KEY_MAX  64
@@ -414,6 +415,15 @@ int main(void)
                     if (new_sc) {
                         printf("[sched] server_response → stateCode=%s\n", new_sc);
                         update_board_state_code(new_sc);
+                    }
+
+                    const char *url = kv_get(resp, rn, "url");
+                    if (url && url[0] != '\0') {
+                        printf("[sched] server_response → url=%s, spawning install_package\n", url);
+                        const char *iargv[] = { INSTALL_PACKAGE_BIN, url, NULL };
+                        g_child_pid = spawn(iargv);
+                        if (g_child_pid >= 0)
+                            wait_for_child();
                     }
                 } else {
                     printf("[sched] no server_response yet, holding state\n");
