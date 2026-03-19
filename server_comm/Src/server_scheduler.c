@@ -34,12 +34,20 @@
 #include <sys/stat.h>
 #include <errno.h>
 
-#define BOARD_STATE      "/etc/acms/board_state"
-#define SERVER_RESPONSE  "/etc/acms/server_response"
-#define STATE_TABLE      "/etc/acms/state_table"
-#define SEND_STATE_BIN        "/usr/local/bin/send_state"
-#define INSTALL_PACKAGE_BIN   "/usr/local/bin/install_package"
-#define BIN_PREFIX            "/usr/local/bin/"
+/* Override at compile time for testing:
+ *   -DACMS_DIR='"/tmp/test/acms"' -DBIN_PREFIX='"/tmp/test/bin/"' */
+#ifndef ACMS_DIR
+#define ACMS_DIR   "/etc/acms"
+#endif
+#ifndef BIN_PREFIX
+#define BIN_PREFIX "/usr/local/bin/"
+#endif
+
+#define BOARD_STATE         ACMS_DIR   "/board_state"
+#define SERVER_RESPONSE     ACMS_DIR   "/server_response"
+#define STATE_TABLE         ACMS_DIR   "/state_table"
+#define SEND_STATE_BIN      BIN_PREFIX "send_state"
+#define INSTALL_PACKAGE_BIN BIN_PREFIX "install_package"
 
 #define KV_MAX   32
 #define KEY_MAX  64
