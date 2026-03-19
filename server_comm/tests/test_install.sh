@@ -19,7 +19,7 @@ VERBOSE=0
 [ "${1:-}" = "-v" ] && VERBOSE=1
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_PKG="$SCRIPT_DIR/../templates/build_package"
+BUILD_PKG="$SCRIPT_DIR/../../templates/build_package"
 INSTALL_PKG_ORIG="$SCRIPT_DIR/../exec/install_package"
 TEST_DIR="/tmp/acms_tests_$$"
 
