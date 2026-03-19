@@ -1,0 +1,13 @@
+[Unit]
+Description=ACMS unlock LUKS partition using hardware chip ID
+DefaultDependencies=no
+After=local-fs.target
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/unlock_luks.sh /secure.img /data
+
+[Install]
+WantedBy=multi-user.target

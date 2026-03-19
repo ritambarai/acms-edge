@@ -1,0 +1,92 @@
+#!/bin/sh
+# initramfs early-boot script: reads Allwinner A20 SID, prompts for password,
+# derives LUKS key and unlocks the encrypted root partition.
+# Placed in /etc/initramfs-tools/scripts/local-top/acms_unlock
+
+PREREQ="udev"
+prereqs() { echo "$PREREQ"; }
+case "$1" in prereqs) prereqs; exit 0 ;; esac
+
+. /scripts/functions
+
+SID_PATHS="
+/sys/bus/nvmem/devices/sunxi-sid0/nvmem
+/sys/devices/platform/soc/1c23800.sid/nvmem/sunxi-sid0/nvmem
+"
+
+MAP_NAME="cryptroot"
+# Root LUKS device — set via kernel cmdline: acms_root=/dev/mmcblk0p3
+LUKS_DEV=""
+
+# ── read kernel cmdline ───────────────────────────────────────────────────────
+
+for arg in $(cat /proc/cmdline); do
+    case "$arg" in
+        acms_root=*) LUKS_DEV="${arg#acms_root=}" ;;
+    esac
+done
+
+if [ -z "$LUKS_DEV" ]; then
+    # fallback: assume standard Lime2 layout — p3 is encrypted root
+    LUKS_DEV="/dev/mmcblk0p3"
+fi
+
+log_begin_msg "ACMS: unlocking encrypted root ($LUKS_DEV)"
+
+# ── read chip ID ──────────────────────────────────────────────────────────────
+
+CHIP_ID=""
+for p in $SID_PATHS; do
+    if [ -r "$p" ]; then
+        CHIP_ID=$(xxd -p "$p" | tr -d '\n')
+        break
+    fi
+done
+
+if [ -z "$CHIP_ID" ]; then
+    panic "ACMS: cannot read chip ID — sunxi-sid not available"
+fi
+
+# ── prompt for password ───────────────────────────────────────────────────────
+
+# Try up to 3 times
+TRIES=0
+while [ $TRIES -lt 3 ]; do
+    /sbin/plymouth ask-for-password \
+        --prompt="ACMS disk password: " \
+        --command="sh -c 'cat > /run/acms_pwd'" 2>/dev/null \
+    || {
+        # plymouth not available — use raw read
+        echo -n "ACMS disk password: " > /dev/console
+        read -r ACMS_PWD < /dev/console
+        printf '%s' "$ACMS_PWD" > /run/acms_pwd
+    }
+
+    PWD=$(cat /run/acms_pwd)
+    rm -f /run/acms_pwd
+
+    # derive key: SHA-256( SID || password )
+    KEY_BIN=$(printf '%s%s' "$CHIP_ID" "$PWD" \
+              | sha256sum | awk '{print $1}' | xxd -r -p)
+
+    if printf '%s' "$KEY_BIN" \
+        | /sbin/cryptsetup luksOpen \
+            --key-file=- \
+            "$LUKS_DEV" "$MAP_NAME" 2>/dev/null; then
+        break
+    fi
+
+    TRIES=$((TRIES + 1))
+    log_warning_msg "ACMS: wrong password (attempt $TRIES/3)"
+done
+
+if [ $TRIES -eq 3 ]; then
+    panic "ACMS: failed to unlock encrypted root after 3 attempts"
+fi
+
+# Redirect root to decrypted device
+ROOT="/dev/mapper/$MAP_NAME"
+log_end_msg
+
+# Update /conf/param.conf so initramfs mounts the right root
+echo "ROOT=/dev/mapper/$MAP_NAME" >> /conf/param.conf

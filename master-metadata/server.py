@@ -2,10 +2,19 @@
 """
 ACMS Metadata local server.
 
-Serves the page and provides three API endpoints:
+Serves the page and provides API endpoints:
   GET  /api/files            -> JSON list of .xml files in this directory
   GET  /api/load/<filename>  -> raw XML content of that file
   POST /api/save             -> writes JSON {filename, content} to this directory
+  POST /api/state            -> receives board state from send_state
+
+/api/state payload (from send_state):
+  {"stateCode": <uint>, "args": [...], "kwargs": {...}}
+
+  stateCode 0  → registration: kwargs must include coreId
+  stateCode N  → state update: kwargs must include coreId
+
+Device state is persisted to devices.json keyed by coreId.
 
 Run:
     python3 server.py          # default port 8000
@@ -18,6 +27,7 @@ import os
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import unquote
+from datetime import datetime, timezone
 
 DIR = Path(__file__).resolve().parent
 
@@ -43,6 +53,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/api/save':
             self._api_save()
+        elif self.path == '/api/state':
+            self._api_state()
         else:
             self._respond(404, 'text/plain', b'Not found')
 
@@ -85,6 +97,63 @@ class Handler(SimpleHTTPRequestHandler):
 
         path.write_text(content, encoding='utf-8')
         self._json({'ok': True, 'saved': fname})
+
+    def _api_state(self):
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            body   = self.rfile.read(length)
+            data   = json.loads(body)
+        except Exception as e:
+            self._respond(400, 'text/plain', f'Bad request: {e}'.encode())
+            return
+
+        state_code = data.get('stateCode')
+        kwargs     = data.get('kwargs', {})
+        args       = data.get('args', [])
+
+        if state_code is None:
+            self._respond(400, 'text/plain', b'stateCode required')
+            return
+
+        core_id = str(kwargs.get('coreId', '')).strip()
+        if not core_id:
+            self._respond(400, 'text/plain', b'coreId required in kwargs')
+            return
+
+        now = datetime.now(timezone.utc).isoformat()
+        ip  = self.client_address[0]
+
+        devices_path = DIR / 'devices.json'
+        devices = json.loads(devices_path.read_text()) if devices_path.exists() else {}
+        device  = devices.get(core_id, {'coreId': core_id})
+
+        if state_code == 0:
+            # registration
+            device.update({
+                'coreId':        core_id,
+                'hostname':      str(kwargs.get('hostname',   '')),
+                'macAddress':    str(kwargs.get('macAddress', '')),
+                'ip':            ip,
+                'registered_at': device.get('registered_at', now),
+                'last_seen':     now,
+            })
+            print(f'[register]  coreId={core_id}  ip={ip}  hostname={device["hostname"]}')
+        else:
+            # state update
+            device['last_seen'] = now
+            device['ip']        = ip
+
+        device['last_state'] = {
+            'stateCode':   state_code,
+            'args':        args,
+            'kwargs':      kwargs,
+            'received_at': now,
+        }
+
+        devices[core_id] = device
+        devices_path.write_text(json.dumps(devices, indent=2))
+        print(f'[state]     coreId={core_id}  stateCode={state_code}  ip={ip}')
+        self._json({'ok': True, 'coreId': core_id, 'stateCode': state_code})
 
     # ── helpers ───────────────────────────────────────────────────────────────
 

@@ -1,0 +1,7 @@
+# board-stage config
+# Lists directories (relative to ~/acms) whose config.xml is used
+# when board-stage.py is run without arguments.
+# One directory per line. Lines starting with # are ignored.
+
+encryption
+server_comm

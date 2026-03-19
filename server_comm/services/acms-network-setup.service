@@ -1,0 +1,18 @@
+[Unit]
+Description=ACMS Network Setup
+Documentation=file:///usr/local/bin/acms-network-setup.sh
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/acms-network-setup.sh
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+# No timeout — portal may wait for user input indefinitely
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target

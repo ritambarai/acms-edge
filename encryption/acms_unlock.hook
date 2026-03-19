@@ -1,0 +1,20 @@
+#!/bin/sh
+# initramfs hook: bundles the binaries needed by acms_unlock into the initramfs.
+# Placed in /etc/initramfs-tools/hooks/acms_unlock
+
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in prereqs) prereqs; exit 0 ;; esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+# binaries needed at early boot
+copy_exec /sbin/cryptsetup
+copy_exec /usr/bin/xxd
+copy_exec /usr/bin/sha256sum
+
+# kernel modules for dm-crypt
+manual_add_modules dm-crypt
+manual_add_modules algif_skcipher
+manual_add_modules sha256_generic
+manual_add_modules aes_arm

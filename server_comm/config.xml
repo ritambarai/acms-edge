@@ -1,0 +1,15 @@
+<board-stage>
+    <!-- compiled binaries → /usr/local/bin -->
+    <dir  src="bin"                               dest="usr/local/bin" />
+
+    <!-- systemd service units → /etc/systemd/system -->
+    <dir  src="services"                          dest="etc/systemd/system" />
+
+    <!-- networking scripts → /usr/local/bin -->
+    <file src="networking/acms-network-setup.sh"  dest="usr/local/bin" />
+    <file src="networking/acms-portal.sh"         dest="usr/local/bin" />
+    <file src="networking/acms-http-handler.sh"   dest="usr/local/bin" />
+
+    <!-- server API URLs and endpoints (read by board_register) -->
+    <file src="server_details"                    dest="etc/acms" />
+</board-stage>

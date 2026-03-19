@@ -5,3 +5,6 @@ master-metadata/.claude/
 acms-esp/.git
 acms-esp/.git_bak/
 acms-esp/
+board/
+secure-build/
+master-metadata/devices.json

@@ -1,0 +1,19 @@
+<board-stage>
+    <!-- initramfs hook: bundles cryptsetup binaries into the initramfs -->
+    <file src="acms_unlock.hook"   dest="etc/initramfs-tools/hooks"            name="acms_unlock" />
+
+    <!-- initramfs early-boot script: reads SID, derives key, unlocks root -->
+    <file src="acms_unlock.script" dest="etc/initramfs-tools/scripts/local-top" name="acms_unlock" />
+
+    <!-- systemd service: mounts file-backed LUKS container (/secure.img → /data) at boot -->
+    <file src="acms-unlock.service" dest="etc/systemd/system" />
+
+    <!-- runtime script: called by acms-unlock.service to open and mount the LUKS container -->
+    <file src="unlock_luks.sh"     dest="usr/local/bin" />
+
+    <!-- one-time provisioning: migrates plain root partition to LUKS2 in-place -->
+    <file src="acms-migrate-root.sh" dest="usr/local/bin" />
+
+    <!-- one-time provisioning: creates the file-backed LUKS container (/secure.img) -->
+    <file src="setup_luks.sh"      dest="usr/local/bin" />
+</board-stage>

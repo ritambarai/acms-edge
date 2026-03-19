@@ -1,0 +1,8 @@
+# ACMS server connection details
+# Read at runtime from /etc/acms/server_details
+#
+# SERVER_URL — base URL of the ACMS server (no trailing slash)
+# API_STATE  — endpoint used by send_state for all state reporting
+
+SERVER_URL=http://acms-server:8000
+API_STATE=/api/state
