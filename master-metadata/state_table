@@ -1,0 +1,24 @@
+# ACMS state codes and executables
+# Used by server_scheduler, send_state, and server /api/state
+
+[stateCode]
+Running=0
+Waiting=1
+Board_Registration=2
+MetaData_Config=3
+PLC_Config=4
+Sensor_Config=5
+Calibration=6
+OTA=7
+
+[Executables]
+# Value is the binary name under /usr/local/bin to spawn before send_state.
+# Leave blank to skip primary and call send_state directly.
+Running=state_wait
+Waiting=state_wait
+Board_Registration=core_id
+MetaData_Config=
+PLC_Config=
+Sensor_Config=
+Calibration=
+OTA=

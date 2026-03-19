@@ -14,164 +14,173 @@
   <class name="PLC">
     <entry key="type" value="RTU"/>
     <entry key="type" value="TCP"/>
-    <entry key="slave" value="PLC1" inlines="PLC1">
-      <entry key="class" value="pumps" inlines="pumps">
-        <entry key="variable" value="mode" inlines="mode">
-          <entry key="unit" value="auto"/>
-          <entry key="unit" value="manual"/>
-          <entry key="dataType" value="0"/>
-          <entry key="Card" value="Card1" inlines="Card1">
-            <entry key="ID" value="1"/>
-            <entry key="Name" value="Digital Inputs"/>
-            <entry key="numPins" value="6"/>
-            <entry key="Start_Addr" value="0"/>
-          </entry>
-        </entry>
-        <entry key="variable" value="state" inlines="state">
-          <entry key="dataType" value="0"/>
-          <entry key="unit" value="OFF"/>
-          <entry key="unit" value="ON"/>
-          <entry key="Card" value="Card2" inlines="Card2">
-            <entry key="ID" value="2"/>
-            <entry key="Name" value="Discrete Inputs"/>
-            <entry key="numPins" value="6"/>
-            <entry key="Start_Addr" value="1000"/>
-          </entry>
-        </entry>
-        <entry key="variable" value="trip" inlines="trip">
-          <entry key="dataType" value="0"/>
-          <entry key="unit" value="UNTRIPPED"/>
-          <entry key="unit" value="TRIPPED"/>
-          <entry key="Fault_Code" value="101"/>
-          <entry key="Card" value="Card1" inlines="Card1">
-            <entry key="ID" value="1"/>
-            <entry key="Name" value="Digital Inputs"/>
-            <entry key="numPins" value="6"/>
-            <entry key="Start_Addr" value="0"/>
-          </entry>
-        </entry>
-        <entry key="variable" value="voltage" inlines="voltage">
-          <entry key="unit" value="volts"/>
-          <entry key="Fault_Code" value="301"/>
-          <entry key="Fault_Code" value="302"/>
-          <entry key="dataType" value="1"/>
-          <entry key="Card" value="Card4" inlines="Card4">
-            <entry key="ID" value="4"/>
-            <entry key="Name" value="Input Registers"/>
-            <entry key="numPins" value="4"/>
-            <entry key="Start_Addr" value="66"/>
-          </entry>
+
+    <entry key="class" value="pumps" inlines="pumps">
+      <entry key="variable" value="mode" inlines="mode">
+        <entry key="unit" value="auto"/>
+        <entry key="unit" value="manual"/>
+        <entry key="dataType" value="0"/>
+        <entry key="Card" value="Card1" inlines="Card1">
+          <entry key="ID" value="1"/>
+          <entry key="Name" value="Digital Inputs"/>
+          <entry key="numPins" value="6"/>
+          <entry key="Start_Addr" value="0"/>
         </entry>
       </entry>
-      <entry key="class" value="pipes" inlines="pipes">
-        <entry key="variable" value="pressure" inlines="pressure">
-          <entry key="dataType" value="1"/>
-          <entry key="unit" value="bar"/>
-          <entry key="unit" value="mmHg"/>
-          <entry key="Fault_Code" value="401"/>
-          <entry key="Fault_Code" value="402"/>
-          <entry key="Card" value="Card4" inlines="Card4">
-            <entry key="ID" value="4"/>
-            <entry key="Name" value="Input Registers"/>
-            <entry key="numPins" value="4"/>
-            <entry key="Start_Addr" value="66"/>
-          </entry>
+      <entry key="variable" value="state" inlines="state">
+        <entry key="dataType" value="0"/>
+        <entry key="unit" value="OFF"/>
+        <entry key="unit" value="ON"/>
+        <entry key="Card" value="Card2" inlines="Card2">
+          <entry key="ID" value="2"/>
+          <entry key="Name" value="Discrete Inputs"/>
+          <entry key="numPins" value="6"/>
+          <entry key="Start_Addr" value="1000"/>
         </entry>
       </entry>
-      <entry key="class" value="air pressure switch" inlines="air pressure switch">
-        <entry key="variable" value="status" inlines="status">
-          <entry key="dataType" value="0"/>
-          <entry key="unit" value="OK"/>
-          <entry key="unit" value="FAULT"/>
-          <entry key="Fault_Code" value="101"/>
-          <entry key="Card" value="Card1" inlines="Card1">
-            <entry key="ID" value="1"/>
-            <entry key="Name" value="Digital Inputs"/>
-            <entry key="numPins" value="6"/>
-            <entry key="Start_Addr" value="0"/>
-          </entry>
+      <entry key="variable" value="trip" inlines="trip">
+        <entry key="dataType" value="0"/>
+        <entry key="unit" value="UNTRIPPED"/>
+        <entry key="unit" value="TRIPPED"/>
+        <entry key="Fault_Code" value="101"/>
+        <entry key="Card" value="Card1" inlines="Card1">
+          <entry key="ID" value="1"/>
+          <entry key="Name" value="Digital Inputs"/>
+          <entry key="numPins" value="6"/>
+          <entry key="Start_Addr" value="0"/>
         </entry>
       </entry>
-      <entry key="class" value="repeater panel" inlines="repeater panel">
-        <entry key="variable" value="status" inlines="status">
-          <entry key="dataType" value="0"/>
-          <entry key="unit" value="OK"/>
-          <entry key="unit" value="FAULT"/>
-          <entry key="Fault_Code" value="101"/>
-          <entry key="Card" value="Card1" inlines="Card1">
-            <entry key="ID" value="1"/>
-            <entry key="Name" value="Digital Inputs"/>
-            <entry key="numPins" value="6"/>
-            <entry key="Start_Addr" value="0"/>
-          </entry>
+      <entry key="variable" value="voltage" inlines="voltage">
+        <entry key="unit" value="volts"/>
+        <entry key="Fault_Code" value="301"/>
+        <entry key="Fault_Code" value="302"/>
+        <entry key="dataType" value="1"/>
+        <entry key="Card" value="Card4" inlines="Card4">
+          <entry key="ID" value="4"/>
+          <entry key="Name" value="Input Registers"/>
+          <entry key="numPins" value="4"/>
+          <entry key="Start_Addr" value="66"/>
         </entry>
       </entry>
-      <entry key="class" value="manual call point" inlines="manual call point">
-        <entry key="variable" value="status" inlines="status">
-          <entry key="dataType" value="0"/>
-          <entry key="unit" value="OK"/>
-          <entry key="unit" value="FAULT"/>
-          <entry key="Fault_Code" value="101"/>
-          <entry key="Card" value="Card1" inlines="Card1">
-            <entry key="ID" value="1"/>
-            <entry key="Name" value="Digital Inputs"/>
-            <entry key="numPins" value="6"/>
-            <entry key="Start_Addr" value="0"/>
-          </entry>
-        </entry>
-      </entry>
-      <entry key="class" value="water tanks" inlines="water tanks">
-        <entry key="variable" value="level" inlines="level">
-          <entry key="dataType" value="1"/>
-          <entry key="unit" value="meter"/>
-          <entry key="unit" value="percentage"/>
-          <entry key="Fault_Code" value="201"/>
-          <entry key="Card" value="Card4" inlines="Card4">
-            <entry key="ID" value="4"/>
-            <entry key="Name" value="Input Registers"/>
-            <entry key="numPins" value="4"/>
-            <entry key="Start_Addr" value="66"/>
-          </entry>
-        </entry>
-      </entry>
-      <entry key="class" value="diesel tank" inlines="diesel tank">
-        <entry key="variable" value="level" inlines="level">
-          <entry key="dataType" value="1"/>
-          <entry key="unit" value="meter"/>
-          <entry key="unit" value="percentage"/>
-          <entry key="Fault_Code" value="201"/>
-          <entry key="Card" value="Card4" inlines="Card4">
-            <entry key="ID" value="4"/>
-            <entry key="Name" value="Input Registers"/>
-            <entry key="numPins" value="4"/>
-            <entry key="Start_Addr" value="66"/>
-          </entry>
-        </entry>
-      </entry>
-      <entry key="ID" value="10:as:er:25:qo:23"/>
     </entry>
-    <entry key="numSlots" value="6"/>
+
+    <entry key="class" value="pipes" inlines="pipes">
+      <entry key="variable" value="pressure" inlines="pressure">
+        <entry key="dataType" value="1"/>
+        <entry key="unit" value="bar"/>
+        <entry key="unit" value="mmHg"/>
+        <entry key="Fault_Code" value="401"/>
+        <entry key="Fault_Code" value="402"/>
+        <entry key="Card" value="Card4" inlines="Card4">
+          <entry key="ID" value="4"/>
+          <entry key="Name" value="Input Registers"/>
+          <entry key="numPins" value="4"/>
+          <entry key="Start_Addr" value="66"/>
+        </entry>
+      </entry>
+    </entry>
+
+    <entry key="class" value="air pressure switch" inlines="air pressure switch">
+      <entry key="variable" value="status" inlines="status">
+        <entry key="dataType" value="0"/>
+        <entry key="unit" value="OK"/>
+        <entry key="unit" value="FAULT"/>
+        <entry key="Fault_Code" value="101"/>
+        <entry key="Card" value="Card1" inlines="Card1">
+          <entry key="ID" value="1"/>
+          <entry key="Name" value="Digital Inputs"/>
+          <entry key="numPins" value="6"/>
+          <entry key="Start_Addr" value="0"/>
+        </entry>
+      </entry>
+    </entry>
+
+    <entry key="class" value="repeater panel" inlines="repeater panel">
+      <entry key="variable" value="status" inlines="status">
+        <entry key="dataType" value="0"/>
+        <entry key="unit" value="OK"/>
+        <entry key="unit" value="FAULT"/>
+        <entry key="Fault_Code" value="101"/>
+        <entry key="Card" value="Card1" inlines="Card1">
+          <entry key="ID" value="1"/>
+          <entry key="Name" value="Digital Inputs"/>
+          <entry key="numPins" value="6"/>
+          <entry key="Start_Addr" value="0"/>
+        </entry>
+      </entry>
+    </entry>
+
+    <entry key="class" value="manual call point" inlines="manual call point">
+      <entry key="variable" value="status" inlines="status">
+        <entry key="dataType" value="0"/>
+        <entry key="unit" value="OK"/>
+        <entry key="unit" value="FAULT"/>
+        <entry key="Fault_Code" value="101"/>
+        <entry key="Card" value="Card1" inlines="Card1">
+          <entry key="ID" value="1"/>
+          <entry key="Name" value="Digital Inputs"/>
+          <entry key="numPins" value="6"/>
+          <entry key="Start_Addr" value="0"/>
+        </entry>
+      </entry>
+    </entry>
+
+    <entry key="class" value="water tanks" inlines="water tanks">
+      <entry key="variable" value="level" inlines="level">
+        <entry key="dataType" value="1"/>
+        <entry key="unit" value="meter"/>
+        <entry key="unit" value="percentage"/>
+        <entry key="Fault_Code" value="201"/>
+        <entry key="Card" value="Card4" inlines="Card4">
+          <entry key="ID" value="4"/>
+          <entry key="Name" value="Input Registers"/>
+          <entry key="numPins" value="4"/>
+          <entry key="Start_Addr" value="66"/>
+        </entry>
+      </entry>
+    </entry>
+
+    <entry key="class" value="diesel tank" inlines="diesel tank">
+      <entry key="variable" value="level" inlines="level">
+        <entry key="dataType" value="1"/>
+        <entry key="unit" value="meter"/>
+        <entry key="unit" value="percentage"/>
+        <entry key="Fault_Code" value="201"/>
+        <entry key="Card" value="Card4" inlines="Card4">
+          <entry key="ID" value="4"/>
+          <entry key="Name" value="Input Registers"/>
+          <entry key="numPins" value="4"/>
+          <entry key="Start_Addr" value="66"/>
+        </entry>
+      </entry>
+    </entry>
+
+    <entry key="node" value="PLC1" inlines="PLC1">
+      <entry key="id" value="10:as:er:25:qo:23"/>
+      <entry key="numSlots" value="6"/>
+    </entry>
   </class>
+
   <class name="Card">
-    <entry key="Label" value="Card1" inlines="Card1">
+    <entry key="label" value="Card1" inlines="Card1">
       <entry key="ID" value="1"/>
       <entry key="Name" value="Digital Inputs"/>
       <entry key="numPins" value="6"/>
       <entry key="Start_Addr" value="0"/>
     </entry>
-    <entry key="Label" value="Card2" inlines="Card2">
+    <entry key="label" value="Card2" inlines="Card2">
       <entry key="ID" value="2"/>
       <entry key="Name" value="Discrete Inputs"/>
       <entry key="numPins" value="6"/>
       <entry key="Start_Addr" value="1000"/>
     </entry>
-    <entry key="Label" value="Card3" inlines="Card3">
+    <entry key="label" value="Card3" inlines="Card3">
       <entry key="ID" value="3"/>
       <entry key="Name" value="Holding Registers"/>
       <entry key="numPins" value="4"/>
       <entry key="Start_Addr" value="40"/>
     </entry>
-    <entry key="Label" value="Card4" inlines="Card4">
+    <entry key="label" value="Card4" inlines="Card4">
       <entry key="ID" value="4"/>
       <entry key="Name" value="Input Registers"/>
       <entry key="numPins" value="4"/>

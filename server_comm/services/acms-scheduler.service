@@ -1,0 +1,13 @@
+[Unit]
+Description=ACMS Board Lifecycle Scheduler
+After=network.target acms-network-setup.service
+Requires=acms-network-setup.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/server_scheduler
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

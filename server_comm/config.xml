@@ -10,6 +10,9 @@
     <file src="networking/acms-portal.sh"         dest="usr/local/bin" />
     <file src="networking/acms-http-handler.sh"   dest="usr/local/bin" />
 
-    <!-- server API URLs and endpoints (read by board_register) -->
+    <!-- server API URLs and endpoints -->
     <file src="server_details"                    dest="etc/acms" />
+
+    <!-- state code definitions (shared with master-metadata via symlink) -->
+    <file src="state_table"                       dest="etc/acms" />
 </board-stage>

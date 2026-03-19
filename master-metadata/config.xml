@@ -8,9 +8,8 @@
   Nesting rule:
     <class name="PLC">
       <key name="slave">          ← PLC has key "slave"
-        <key name="pumps"/>       ← values of "slave" that become classes
-        <key name="pipes"/>         inherit these as their key options
-        ...
+        <key name="id"/>          ← values of "slave" inherit these as sub-keys
+        <key name="numSlots"/>
       </key>
     </class>
 
@@ -26,7 +25,7 @@
   <!-- Card mirrors PLC: "name" key holds card instances (like PLC's "slave").
        Each instance inherits fn_id, fn_name, numPins, Start_Addr as its sub-keys. -->
   <class name="Card">
-    <key name="Label">
+    <key name="label">
       <key name="ID"/>
       <key name="Name"/>
       <key name="numPins"/>
@@ -34,20 +33,22 @@
     </key>
   </class>
 
-  <!-- Classes WITH key options — also drive the Key dropdown -->
+  <!-- PLC: top-level keys are type, class, and node.
+       class values (pumps, pipes, …) inherit variable as their sub-key.
+       node values (PLC1, PLC2, …) inherit id and numSlots as their sub-keys. -->
   <class name="PLC">
     <key name="type"/>
-    <key name="numSlots"/>
-    <key name="slave">
-      <key name="ID"/>
-      <key name="class">
-        <key name="variable">
-          <key name="dataType"/>
-          <key name="unit"/>
-          <key name="Fault_Code"/>
-          <key name="Card"/>
-        </key>
+    <key name="class">
+      <key name="variable">
+        <key name="dataType"/>
+        <key name="unit"/>
+        <key name="Fault_Code"/>
+        <key name="Card"/>
       </key>
+    </key>
+    <key name="node">
+      <key name="id"/>
+      <key name="numSlots"/>
     </key>
   </class>
 

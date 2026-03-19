@@ -24,6 +24,7 @@
 #define SID_LEN      16              /* 128-bit SID → 32 hex chars */
 #define CHIP_ID_HEX  (SID_LEN * 2 + 1)
 #define SERVER_COMM  "/etc/acms/server_comm"
+#define BOARD_STATE  "/etc/acms/board_state"
 
 static const char *SID_PATHS[] = {
     "/sys/bus/nvmem/devices/sunxi-sid0/nvmem",
@@ -117,6 +118,46 @@ static int save_core_id(const char *chip_id)
     return 0;
 }
 
+/* ── save filePath to board_state ────────────────────────────────────────── */
+
+/*
+ * Writes filePath=SERVER_COMM into /etc/acms/board_state, preserving any
+ * existing keys (e.g. stateCode written by the scheduler). Atomic rename.
+ */
+static int save_file_path(void)
+{
+    char tmp_path[] = "/etc/acms/.board_state.XXXXXX";
+
+    int fd = mkstemp(tmp_path);
+    if (fd < 0) { perror("mkstemp"); return -1; }
+
+    FILE *tmp = fdopen(fd, "w");
+    if (!tmp) { perror("fdopen"); close(fd); unlink(tmp_path); return -1; }
+
+    /* copy existing lines, skipping any stale filePath */
+    FILE *cur = fopen(BOARD_STATE, "r");
+    if (cur) {
+        char line[512];
+        while (fgets(line, sizeof(line), cur))
+            if (strncmp(line, "filePath=", 9) != 0)
+                fputs(line, tmp);
+        fclose(cur);
+    }
+
+    fprintf(tmp, "filePath=%s\n", SERVER_COMM);
+    fclose(tmp);
+
+    chmod(tmp_path, 0640);
+
+    if (rename(tmp_path, BOARD_STATE) != 0) {
+        perror("rename");
+        unlink(tmp_path);
+        return -1;
+    }
+
+    return 0;
+}
+
 /* ── main ────────────────────────────────────────────────────────────────── */
 
 int main(void)
@@ -140,5 +181,12 @@ int main(void)
     }
 
     printf("Saved to %s\n", SERVER_COMM);
+
+    if (save_file_path() != 0) {
+        fprintf(stderr, "ERROR: could not write filePath to %s\n", BOARD_STATE);
+        return 1;
+    }
+
+    printf("filePath written to %s\n", BOARD_STATE);
     return 0;
 }

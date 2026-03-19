@@ -37,10 +37,12 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <netdb.h>
 
-#define SERVER_DETAILS "/etc/acms/server_details"
-#define URL_MAX        256
+#define SERVER_DETAILS   "/etc/acms/server_details"
+#define SERVER_RESPONSE  "/etc/acms/server_response"
+#define URL_MAX          256
 #define HOST_MAX       128
 #define PATH_MAX_LEN   128
 #define JSON_MAX       8192
@@ -226,6 +228,56 @@ static int build_json(Buf *b, int argc, char **argv,
     return buf_cat(b, "}}");
 }
 
+/* ── server_response writer ─────────────────────────────────────────────── */
+
+/*
+ * Scan JSON body for "key": <uint> and return the value.
+ * Returns -1 if not found or not a valid uint.
+ */
+static int extract_json_uint(const char *json, const char *key, unsigned int *out)
+{
+    char needle[128];
+    snprintf(needle, sizeof(needle), "\"%s\":", key);
+    const char *p = strstr(json, needle);
+    if (!p) return -1;
+    p += strlen(needle);
+    while (*p == ' ' || *p == '\t') p++;
+    char *end;
+    unsigned long v = strtoul(p, &end, 10);
+    if (end == p) return -1;
+    *out = (unsigned int)v;
+    return 0;
+}
+
+/*
+ * Write key=value pairs from the server JSON response to SERVER_RESPONSE.
+ * Currently extracts stateCode; extend as the server API grows.
+ */
+static void write_server_response(const char *body)
+{
+    unsigned int next_sc;
+    if (extract_json_uint(body, "stateCode", &next_sc) < 0) {
+        fprintf(stderr, "send_state: no stateCode in server response\n");
+        return;
+    }
+
+    char tmp[] = "/etc/acms/.server_response.XXXXXX";
+    int fd = mkstemp(tmp);
+    if (fd < 0) { perror("mkstemp"); return; }
+
+    FILE *f = fdopen(fd, "w");
+    if (!f) { perror("fdopen"); close(fd); unlink(tmp); return; }
+
+    fprintf(f, "stateCode=%u\n", next_sc);
+    fclose(f);
+
+    chmod(tmp, 0640);
+    if (rename(tmp, SERVER_RESPONSE) != 0) {
+        perror("rename server_response");
+        unlink(tmp);
+    }
+}
+
 /* ── HTTP POST ───────────────────────────────────────────────────────────── */
 
 static int post_json(const char *host, int port, const char *path,
@@ -285,7 +337,11 @@ static int post_json(const char *host, int port, const char *path,
     printf("Server  : %s\n", resp);
 
     char *body = strstr(status_end ? status_end + 2 : resp, "\r\n\r\n");
-    if (body && *(body + 4)) printf("Response: %s\n", body + 4);
+    if (body) {
+        body += 4;
+        if (*body) printf("Response: %s\n", body);
+        write_server_response(body);
+    }
 
     return 0;
 }
