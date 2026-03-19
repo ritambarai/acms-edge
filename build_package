@@ -2,8 +2,8 @@
 #
 # build_package
 #
-# Builds an opkg (.ipk) from a flat directory of files (no subdirectories).
-# Auto-generates install.sh based on file types:
+# Builds an opkg (.ipk) from a directory of files.
+# Auto-generates install.sh based on file types (top-level files only):
 #
 #   ELF binary or .sh  →  /usr/local/bin/   + chmod +x
 #   .service           →  /etc/systemd/system/ + systemctl enable
@@ -14,14 +14,14 @@
 # You can also manually edit the generated install.sh inside the .ipk
 # by extracting, editing, and re-packing before deploying.
 #
-# After a successful pack the input directory is cleared (all files removed).
+# After a successful pack the top-level files in the input directory are cleared.
 #
 # Flags:
 #   -f         Force: ignore any existing install.sh and regenerate from scratch.
 #              Without -f, an existing install.sh is preserved so manual edits survive.
-#   -c/--copy  Archive: save install.sh and a file manifest alongside the .ipk.
-#              Requires an output path.  Archives are written to a sibling
-#              archives/ directory inside the same parent as <input_dir>:
+#   -c/--copy  Archive: save install.sh and a file manifest to archives/.
+#              Requires an output path.  Archives are written to archives/ next to
+#              this script (override with ACMS_ARCHIVE_DIR env var):
 #                archives/<output_stem>.sh   — the install.sh used for this build
 #                archives/<output_stem>.csv  — manifest: filename,destination
 #
@@ -39,6 +39,10 @@
 #   build_package -c packages/my_pkg my_pkg.ipk            # pack and archive install.sh + manifest
 
 set -eu
+
+# Archives land next to this script unless overridden (useful for testing)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ARCHIVE_DIR="${ACMS_ARCHIVE_DIR:-"$SCRIPT_DIR/archives"}"
 
 FORCE=0
 COPY=0
@@ -214,7 +218,6 @@ echo "Built: $OUTPUT"
 
 if [ "$COPY" = "1" ]; then
     OUTPUT_STEM="$(basename "$OUTPUT" .ipk)"
-    ARCHIVE_DIR="$(dirname "$INPUT_DIR")/archives"
     mkdir -p "$ARCHIVE_DIR"
 
     cp "$INSTALL_SH" "$ARCHIVE_DIR/${OUTPUT_STEM}.sh"

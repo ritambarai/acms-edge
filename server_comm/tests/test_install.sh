@@ -19,7 +19,7 @@ VERBOSE=0
 [ "${1:-}" = "-v" ] && VERBOSE=1
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_PKG="$SCRIPT_DIR/../../templates/build_package"
+BUILD_PKG="$SCRIPT_DIR/../../build_package"
 INSTALL_PKG_ORIG="$SCRIPT_DIR/../exec/install_package"
 TEST_DIR="/tmp/acms_tests_$$"
 
@@ -271,9 +271,9 @@ cp /bin/true "$PKG_ARC/arc_bin"
 printf '#!/bin/sh\necho hi\n' > "$PKG_ARC/arc_svc.sh"
 printf 'cfg=val\n' > "$PKG_ARC/arc_cfg"
 ARC_IPK="$TEST_DIR/arc_out.ipk"
-out=$("$BUILD_PKG" -c "$PKG_ARC" "$ARC_IPK" 2>&1); rc=$?
-log "$out"
 ARC_DIR="$TEST_DIR/archives"
+out=$(ACMS_ARCHIVE_DIR="$ARC_DIR" "$BUILD_PKG" -c "$PKG_ARC" "$ARC_IPK" 2>&1); rc=$?
+log "$out"
 if [ $rc -eq 0 ] \
     && [ -f "$ARC_DIR/arc_out.sh" ] \
     && [ -f "$ARC_DIR/arc_out.csv" ] \
