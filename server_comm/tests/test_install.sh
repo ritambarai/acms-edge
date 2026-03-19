@@ -139,11 +139,12 @@ make_ipk() {
 printf "${BOLD}=== build_package tests ===${NC}\n"
 # ══════════════════════════════════════════════════════════════════════════════
 
-# T01: no args → usage + exit 1
-T="T01 build_package: no args → usage+exit1"
-out=$("$BUILD_PKG" 2>&1); rc=$?
+# T01: no args → defaults to packages/ (errors if packages/ absent in CWD)
+T="T01 build_package: no args → defaults to packages/ input dir"
+T01_WD="$TEST_DIR/t01_wd"; mkdir -p "$T01_WD"   # dir with no packages/ subdir
+out=$(cd "$T01_WD" && "$BUILD_PKG" 2>&1); rc=$?
 log "$out"
-if [ $rc -ne 0 ] && echo "$out" | grep -qi "usage"; then pass "$T"
+if [ $rc -ne 0 ] && echo "$out" | grep -qi "not found"; then pass "$T"
 else fail "$T" "rc=$rc  out=$out"; fi
 
 # T02: non-existent directory → error

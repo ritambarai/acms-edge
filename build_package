@@ -28,10 +28,11 @@
 # Requires: ar, tar, od
 #
 # Usage:
-#   build_package [-f] [-c] <input_dir>                    # generate install.sh only
-#   build_package [-f] [-c] <input_dir> <output.ipk> [N]  # pack .ipk
+#   build_package [-f] [-c] [input_dir]                    # generate install.sh only (default: packages/)
+#   build_package [-f] [-c] [input_dir] <output.ipk> [N]  # pack .ipk
 #
 # Examples:
+#   build_package                                          # use packages/ as input dir
 #   build_package packages/my_pkg                          # write install.sh for review
 #   build_package packages/my_pkg my_pkg.ipk               # pack with stateCode=0
 #   build_package packages/my_pkg my_pkg.ipk 3             # pack with stateCode=3
@@ -51,20 +52,15 @@ while [ $# -gt 0 ]; do
         -f)       FORCE=1; shift ;;
         -c|--copy) COPY=1; shift ;;
         -*) echo "ERROR: unknown option: $1" >&2
-            echo "Usage: $0 [-f] [-c] <input_dir> [output.ipk] [next_state_code]" >&2
+            echo "Usage: $0 [-f] [-c] [input_dir] [output.ipk] [next_state_code]" >&2
             exit 1 ;;
         *)  break ;;
     esac
 done
 
-INPUT_DIR="${1:-}"
+INPUT_DIR="${1:-packages}"
 OUTPUT="${2:-}"
 NEXT_STATE="${3:-0}"
-
-if [ -z "$INPUT_DIR" ]; then
-    echo "Usage: $0 [-f] [-c] <input_dir> [output.ipk] [next_state_code]" >&2
-    exit 1
-fi
 
 if [ ! -d "$INPUT_DIR" ]; then
     echo "ERROR: input directory not found: $INPUT_DIR" >&2
