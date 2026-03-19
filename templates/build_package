@@ -2,7 +2,7 @@
 #
 # build_package
 #
-# Builds an opkg (.ipk) from a flat directory of files.
+# Builds an opkg (.ipk) from a flat directory of files (no subdirectories).
 # Auto-generates install.sh based on file types:
 #
 #   ELF binary or .sh  →  /usr/local/bin/   + chmod +x
@@ -14,30 +14,40 @@
 # You can also manually edit the generated install.sh inside the .ipk
 # by extracting, editing, and re-packing before deploying.
 #
-# Flags:
-#   -f   Force: ignore any existing install.sh and regenerate from scratch.
-#        Without -f, an existing install.sh is preserved so manual edits survive.
+# After a successful pack the input directory is cleared (all files removed).
 #
-# Requires: ar, tar, file
+# Flags:
+#   -f         Force: ignore any existing install.sh and regenerate from scratch.
+#              Without -f, an existing install.sh is preserved so manual edits survive.
+#   -c/--copy  Archive: save install.sh and a file manifest alongside the .ipk.
+#              Requires an output path.  Archives are written to a sibling
+#              archives/ directory inside the same parent as <input_dir>:
+#                archives/<output_stem>.sh   — the install.sh used for this build
+#                archives/<output_stem>.csv  — manifest: filename,destination
+#
+# Requires: ar, tar, od
 #
 # Usage:
-#   build_package [-f] <input_dir>                    # generate install.sh only (edit before packing)
-#   build_package [-f] <input_dir> <output.ipk> [N]   # generate install.sh and pack .ipk
+#   build_package [-f] [-c] <input_dir>                    # generate install.sh only
+#   build_package [-f] [-c] <input_dir> <output.ipk> [N]  # pack .ipk
 #
 # Examples:
-#   build_package ./my_pkg                 # writes my_pkg/install.sh for review
-#   build_package ./my_pkg my_pkg.ipk      # packs with stateCode=0
-#   build_package ./my_pkg my_pkg.ipk 3    # packs with stateCode=3
-#   build_package -f ./my_pkg my_pkg.ipk   # regenerate install.sh, then pack
+#   build_package packages/my_pkg                          # write install.sh for review
+#   build_package packages/my_pkg my_pkg.ipk               # pack with stateCode=0
+#   build_package packages/my_pkg my_pkg.ipk 3             # pack with stateCode=3
+#   build_package -f packages/my_pkg my_pkg.ipk            # regenerate install.sh, then pack
+#   build_package -c packages/my_pkg my_pkg.ipk            # pack and archive install.sh + manifest
 
 set -eu
 
 FORCE=0
+COPY=0
 while [ $# -gt 0 ]; do
     case "$1" in
-        -f) FORCE=1; shift ;;
+        -f)       FORCE=1; shift ;;
+        -c|--copy) COPY=1; shift ;;
         -*) echo "ERROR: unknown option: $1" >&2
-            echo "Usage: $0 [-f] <input_dir> [output.ipk] [next_state_code]" >&2
+            echo "Usage: $0 [-f] [-c] <input_dir> [output.ipk] [next_state_code]" >&2
             exit 1 ;;
         *)  break ;;
     esac
@@ -48,12 +58,17 @@ OUTPUT="${2:-}"
 NEXT_STATE="${3:-0}"
 
 if [ -z "$INPUT_DIR" ]; then
-    echo "Usage: $0 [-f] <input_dir> [output.ipk] [next_state_code]" >&2
+    echo "Usage: $0 [-f] [-c] <input_dir> [output.ipk] [next_state_code]" >&2
     exit 1
 fi
 
 if [ ! -d "$INPUT_DIR" ]; then
     echo "ERROR: input directory not found: $INPUT_DIR" >&2
+    exit 1
+fi
+
+if [ "$COPY" = "1" ] && [ -z "$OUTPUT" ]; then
+    echo "ERROR: -c/--copy requires an output path" >&2
     exit 1
 fi
 
@@ -68,14 +83,16 @@ trap cleanup EXIT
 
 mkdir -p "$DATA_DIR" "$CTRL_DIR"
 
-# ── classify and place files ──────────────────────────────────────────────────
+# ── classify and place files (top-level only — no subdirectories) ─────────────
 
 BINS=""       # files going to /usr/local/bin (need chmod +x)
 SERVICES=""   # .service files (need systemctl enable)
+FILE_LIST=""  # CSV rows: filename,/destination
 
 for _src in "$INPUT_DIR"/*; do
-    [ -f "$_src" ] || continue
+    [ -f "$_src" ] || continue          # skip subdirectories
     _name="$(basename "$_src")"
+    [ "$_name" = "install.sh" ] && continue   # not a payload file
 
     # determine destination by type
     case "$_name" in
@@ -98,6 +115,8 @@ for _src in "$INPUT_DIR"/*; do
             ;;
     esac
 
+    FILE_LIST="${FILE_LIST}${_name},/${_dest}
+"
     mkdir -p "$DATA_DIR/$(dirname "$_dest")"
     cp -p "$_src" "$DATA_DIR/$_dest"
     echo "  $INPUT_DIR/$_name  →  /$_dest"
@@ -190,3 +209,22 @@ printf '2.0\n' > "$DEBIAN_BIN"
 ( cd "$TMP_DIR" && ar rcs "$(realpath "$OUTPUT")" debian-binary control.tar.gz data.tar.gz )
 
 echo "Built: $OUTPUT"
+
+# ── archive install.sh and file manifest (-c/--copy) ─────────────────────────
+
+if [ "$COPY" = "1" ]; then
+    OUTPUT_STEM="$(basename "$OUTPUT" .ipk)"
+    ARCHIVE_DIR="$(dirname "$INPUT_DIR")/archives"
+    mkdir -p "$ARCHIVE_DIR"
+
+    cp "$INSTALL_SH" "$ARCHIVE_DIR/${OUTPUT_STEM}.sh"
+    printf 'filename,destination\n%s' "$FILE_LIST" > "$ARCHIVE_DIR/${OUTPUT_STEM}.csv"
+
+    echo "Archived: $ARCHIVE_DIR/${OUTPUT_STEM}.sh"
+    echo "Archived: $ARCHIVE_DIR/${OUTPUT_STEM}.csv"
+fi
+
+# ── clear input directory after successful pack ───────────────────────────────
+
+echo "Clearing: $INPUT_DIR"
+find "$INPUT_DIR" -maxdepth 1 -type f -delete

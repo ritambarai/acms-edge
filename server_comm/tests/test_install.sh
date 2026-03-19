@@ -204,11 +204,12 @@ if [ $rc -eq 0 ] && [ -f "$IPK" ]; then
     fi
 else fail "$T" "rc=$rc  out=$out"; fi
 
-# T06: existing install.sh is preserved (not overwritten)
-T="T06 build_package: existing install.sh preserved"
+# T05 cleared PKG_DIR — T06 onwards uses a fresh dir or just install.sh
+# T06: existing install.sh is preserved (not overwritten, dry-run so no clear)
+T="T06 build_package: existing install.sh preserved (dry-run)"
 CUSTOM="# my custom install — do not overwrite"
 printf '%s\n' "$CUSTOM" > "$PKG_DIR/install.sh"
-out=$("$BUILD_PKG" "$PKG_DIR" 2>&1)
+out=$("$BUILD_PKG" "$PKG_DIR" 2>&1)   # dry-run: no output arg → no clear
 log "$out"
 content=$(cat "$PKG_DIR/install.sh")
 if echo "$content" | grep -q "custom install" \
@@ -216,9 +217,8 @@ if echo "$content" | grep -q "custom install" \
     pass "$T"
 else fail "$T" "install.sh was overwritten; content='$content'"; fi
 
-# T06b: -f flag regenerates install.sh even when one already exists
+# T06b: -f flag regenerates install.sh even when one already exists (dry-run)
 T="T06b build_package: -f regenerates install.sh, discards manual edits"
-# PKG_DIR still has the "custom install" install.sh from T06
 out=$("$BUILD_PKG" -f "$PKG_DIR" 2>&1)
 log "$out"
 content=$(cat "$PKG_DIR/install.sh")
@@ -245,6 +245,64 @@ CHECK="$TEST_DIR/ctrl_sc3_check"; mkdir -p "$CHECK"
     && tar -xzf control.tar.gz 2>/dev/null )
 if grep -q "' 3 >" "$CHECK/install.sh" 2>/dev/null; then pass "$T"
 else fail "$T" "$(cat "$CHECK/install.sh" 2>/dev/null || echo 'no install.sh in package')"; fi
+
+# T07b: input dir is cleared (all files removed) after successful pack
+T="T07b build_package: input dir cleared after pack"
+PKG_CLR="$TEST_DIR/pkg_clear"; mkdir -p "$PKG_CLR"
+printf 'key=val\n' > "$PKG_CLR/cfg"
+"$BUILD_PKG" "$PKG_CLR" "$TEST_DIR/clear.ipk" > /dev/null 2>&1
+remaining=$(ls "$PKG_CLR" 2>/dev/null | wc -l)
+if [ "$remaining" -eq 0 ]; then pass "$T"
+else fail "$T" "files still present: $(ls "$PKG_CLR")"; fi
+
+# T07c: -c without output arg → error
+T="T07c build_package: -c without output arg → error"
+PKG_CE="$TEST_DIR/pkg_ce"; mkdir -p "$PKG_CE"
+printf 'cfg=val\n' > "$PKG_CE/cfg"
+out=$("$BUILD_PKG" -c "$PKG_CE" 2>&1); rc=$?
+log "$out"
+if [ $rc -ne 0 ] && echo "$out" | grep -qi "requires"; then pass "$T"
+else fail "$T" "rc=$rc  out=$out"; fi
+
+# T07d: -c saves archives/<stem>.sh and <stem>.csv with correct content
+T="T07d build_package: -c writes archives/<stem>.sh and <stem>.csv"
+PKG_ARC="$TEST_DIR/pkg_arc"; mkdir -p "$PKG_ARC"
+cp /bin/true "$PKG_ARC/arc_bin"
+printf '#!/bin/sh\necho hi\n' > "$PKG_ARC/arc_svc.sh"
+printf 'cfg=val\n' > "$PKG_ARC/arc_cfg"
+ARC_IPK="$TEST_DIR/arc_out.ipk"
+out=$("$BUILD_PKG" -c "$PKG_ARC" "$ARC_IPK" 2>&1); rc=$?
+log "$out"
+ARC_DIR="$TEST_DIR/archives"
+if [ $rc -eq 0 ] \
+    && [ -f "$ARC_DIR/arc_out.sh" ] \
+    && [ -f "$ARC_DIR/arc_out.csv" ] \
+    && grep -q "^filename,destination$"           "$ARC_DIR/arc_out.csv" \
+    && grep -q "^arc_bin,/usr/local/bin/arc_bin$" "$ARC_DIR/arc_out.csv" \
+    && grep -q "^arc_svc.sh,/usr/local/bin/arc_svc.sh$" "$ARC_DIR/arc_out.csv" \
+    && grep -q "^arc_cfg,/etc/acms/arc_cfg$"      "$ARC_DIR/arc_out.csv"; then
+    pass "$T"
+else
+    fail "$T" "rc=$rc  csv='$(cat "$ARC_DIR/arc_out.csv" 2>/dev/null || echo missing)'"
+fi
+
+# T07e: subdirectories in input dir are skipped (only top-level files packaged)
+T="T07e build_package: subdirectories in input dir are ignored"
+PKG_SUB="$TEST_DIR/pkg_sub"; mkdir -p "$PKG_SUB/subdir"
+printf 'key=val\n' > "$PKG_SUB/top_cfg"
+printf 'nested=val\n' > "$PKG_SUB/subdir/nested_cfg"
+SUB_IPK="$TEST_DIR/sub.ipk"
+out=$("$BUILD_PKG" "$PKG_SUB" "$SUB_IPK" 2>&1); rc=$?
+log "$out"
+# nested_cfg must not appear in build output or inside data.tar.gz
+EXT_SUB="$TEST_DIR/sub_ext"; mkdir -p "$EXT_SUB"
+( cd "$EXT_SUB" && ar x "$SUB_IPK" data.tar.gz 2>/dev/null \
+    && tar -tzf data.tar.gz 2>/dev/null > "$EXT_SUB/data_list" )
+if [ $rc -eq 0 ] \
+    && ! echo "$out" | grep -q "nested_cfg" \
+    && ! grep -q "nested_cfg" "$EXT_SUB/data_list"; then
+    pass "$T"
+else fail "$T" "nested file leaked into package; data list: $(cat "$EXT_SUB/data_list" 2>/dev/null)"; fi
 
 # ══════════════════════════════════════════════════════════════════════════════
 printf "\n${BOLD}=== install_package error tests (exit before daemon ops — host safe) ===${NC}\n"
