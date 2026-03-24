@@ -14,7 +14,6 @@
   <class name="PLC">
     <entry key="type" value="RTU"/>
     <entry key="type" value="TCP"/>
-
     <entry key="class" value="pumps" inlines="pumps">
       <entry key="variable" value="mode" inlines="mode">
         <entry key="unit" value="auto"/>
@@ -63,7 +62,6 @@
         </entry>
       </entry>
     </entry>
-
     <entry key="class" value="pipes" inlines="pipes">
       <entry key="variable" value="pressure" inlines="pressure">
         <entry key="dataType" value="1"/>
@@ -79,7 +77,6 @@
         </entry>
       </entry>
     </entry>
-
     <entry key="class" value="air pressure switch" inlines="air pressure switch">
       <entry key="variable" value="status" inlines="status">
         <entry key="dataType" value="0"/>
@@ -94,7 +91,6 @@
         </entry>
       </entry>
     </entry>
-
     <entry key="class" value="repeater panel" inlines="repeater panel">
       <entry key="variable" value="status" inlines="status">
         <entry key="dataType" value="0"/>
@@ -109,7 +105,6 @@
         </entry>
       </entry>
     </entry>
-
     <entry key="class" value="manual call point" inlines="manual call point">
       <entry key="variable" value="status" inlines="status">
         <entry key="dataType" value="0"/>
@@ -124,7 +119,6 @@
         </entry>
       </entry>
     </entry>
-
     <entry key="class" value="water tanks" inlines="water tanks">
       <entry key="variable" value="level" inlines="level">
         <entry key="dataType" value="1"/>
@@ -139,7 +133,6 @@
         </entry>
       </entry>
     </entry>
-
     <entry key="class" value="diesel tank" inlines="diesel tank">
       <entry key="variable" value="level" inlines="level">
         <entry key="dataType" value="1"/>
@@ -154,13 +147,12 @@
         </entry>
       </entry>
     </entry>
-
     <entry key="node" value="PLC1" inlines="PLC1">
-      <entry key="id" value="10:as:er:25:qo:23"/>
       <entry key="numSlots" value="6"/>
+      <entry key="ID" value="10:as:er:25:qo:23"/>
     </entry>
+    <entry key="brand" value="Selec"/>
   </class>
-
   <class name="Card">
     <entry key="label" value="Card1" inlines="Card1">
       <entry key="ID" value="1"/>

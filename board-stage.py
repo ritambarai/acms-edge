@@ -2,6 +2,7 @@
 """
 board-stage  [<dest_in_board>  <file1> [file2 ...]]
 board-stage  --config/-c <config.xml>
+board-stage  --default/-d
 
 No-arg form (reads ~/acms/board-stage for directories to process):
     board-stage.py
@@ -14,10 +15,18 @@ Config form (reads file list + destinations from XML):
     board-stage.py --config encryption/config.xml
     board-stage.py -c server_comm/config.xml
 
+Default form (full staging + auto-patch host WiFi + host IP):
+    board-stage.py --default
+    board-stage.py -d
+
+  Runs full staging (same as no-arg), then patches board/ in-place:
+    - board/etc/acms/default-wifi.conf  — adds host's current WiFi (SSID/password/BSSID)
+    - board/etc/acms/server_details     — sets SERVER_URL to host's LAN IP
+
 Config XML schema:
     <board-stage>
         <file src="filename" dest="path/in/board" [name="renamed_name"] />
-        <dir  src="dirname"  dest="path/in/board" />
+        <dir  src="dirname"  dest="path/in/board" [exclude="file1,file2"] />
         ...
     </board-stage>
 
@@ -28,6 +37,7 @@ Config XML schema:
   <dir>   src  — directory path relative to the XML file's directory
           dest — destination path inside ~/acms/board/
                  all files directly inside src/ are staged (non-recursive)
+          exclude — comma-separated filenames to skip
 
 board-stage conf file (~/acms/board-stage):
     One directory name per line (relative to ~/acms).
@@ -35,8 +45,10 @@ board-stage conf file (~/acms/board-stage):
     Each listed directory must contain a config.xml.
 """
 
+import re
 import sys
 import shutil
+import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -118,7 +130,8 @@ def run_config(config_path: Path):
             if not src_dir.is_dir():
                 print(f"ERROR: directory not found: {src_dir}", file=sys.stderr)
                 sys.exit(1)
-            files = sorted(p for p in src_dir.iterdir() if p.is_file())
+            excludes = {e.strip() for e in entry.get("exclude", "").split(",") if e.strip()}
+            files = sorted(p for p in src_dir.iterdir() if p.is_file() and p.name not in excludes)
             if not files:
                 print(f"  (no files in {src_attr}/)")
             for src_path in files:
@@ -170,6 +183,125 @@ def run_all():
         sys.exit(1)
 
 
+# ── --default helpers ──────────────────────────────────────────────────────────
+
+def _get_host_wifi():
+    """Return (ssid, password, bssid) of the host's active WiFi, or None."""
+    try:
+        out = subprocess.check_output(
+            ['nmcli', '-t', '-f', 'ACTIVE,SSID,BSSID', 'dev', 'wifi', 'list'],
+            text=True, stderr=subprocess.DEVNULL
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+    for line in out.splitlines():
+        if not line.startswith('yes:'):
+            continue
+        # nmcli -t escapes colons in values: "yes:SSID:AA\:BB\:CC\:DD\:EE\:FF"
+        rest = line[4:]  # strip "yes:"
+        # Split on unescaped colons only
+        fields = re.split(r'(?<!\\):', rest)
+        ssid  = fields[0].replace('\\:', ':')
+        bssid = ':'.join(fields[1:]).replace('\\:', ':') if len(fields) > 1 else ''
+        if not ssid or not bssid:
+            continue
+
+        # Get password via nmcli --show-secrets
+        password = ''
+        try:
+            pw_out = subprocess.check_output(
+                ['nmcli', '--show-secrets', '-t', '-f',
+                 '802-11-wireless-security.psk', 'connection', 'show', ssid],
+                text=True, stderr=subprocess.DEVNULL
+            )
+            for pw_line in pw_out.splitlines():
+                if pw_line.startswith('802-11-wireless-security.psk:'):
+                    password = pw_line.split(':', 1)[1]
+                    break
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print("  [default] WARN: could not read WiFi password (permission denied?)")
+
+        return ssid, password, bssid
+
+    return None
+
+
+def _get_host_lan_ip():
+    """Return the host's outbound LAN IP (interface used to reach the internet)."""
+    try:
+        out = subprocess.check_output(
+            ['ip', 'route', 'get', '8.8.8.8'],
+            text=True, stderr=subprocess.DEVNULL
+        )
+        tokens = out.split()
+        if 'src' in tokens:
+            return tokens[tokens.index('src') + 1]
+    except (subprocess.CalledProcessError, FileNotFoundError, IndexError):
+        pass
+    return None
+
+
+def _patch_default_wifi(ssid: str, password: str, bssid: str):
+    """Replace all non-comment entries in board/etc/acms/default-wifi.conf with the new entry."""
+    wifi_file = BOARD / 'etc' / 'acms' / 'default-wifi.conf'
+    if not wifi_file.exists():
+        print(f"  [default] WARN: {wifi_file} not found — skipping WiFi patch")
+        return
+
+    lines = wifi_file.read_text().splitlines()
+    # Keep comment/blank lines; strip any existing data lines
+    kept = [l for l in lines if l.startswith('#') or not l.strip()]
+    # Remove trailing blank lines then add one blank + new entry
+    while kept and not kept[-1].strip():
+        kept.pop()
+    kept.append(f"{ssid},{password},{bssid}")
+    wifi_file.write_text('\n'.join(kept) + '\n')
+    print(f"  [default] default-wifi.conf  ← {ssid} ({bssid})")
+
+
+def _patch_server_details(lan_ip: str):
+    """Update SERVER_URL in board/etc/acms/server_details with the host's LAN IP."""
+    details_file = BOARD / 'etc' / 'acms' / 'server_details'
+    if not details_file.exists():
+        print(f"  [default] WARN: {details_file} not found — skipping server IP patch")
+        return
+
+    lines = details_file.read_text().splitlines()
+    new_lines = []
+    for line in lines:
+        if line.startswith('SERVER_URL='):
+            # Preserve existing port and path, replace only the host
+            m = re.match(r'SERVER_URL=https?://[^:/]+(:\d+)?(/.*)?', line)
+            port = m.group(1) or ':8000' if m else ':8000'
+            path = m.group(2) or ''      if m else ''
+            line = f"SERVER_URL=http://{lan_ip}{port}{path}"
+        new_lines.append(line)
+    details_file.write_text('\n'.join(new_lines) + '\n')
+    print(f"  [default] server_details     ← SERVER_URL=http://{lan_ip}:8000")
+
+
+def run_default():
+    """Full staging + auto-patch host WiFi and LAN IP into board/."""
+    run_all()
+
+    print("\n[default patches]")
+
+    wifi = _get_host_wifi()
+    if wifi:
+        _patch_default_wifi(*wifi)
+    else:
+        print("  [default] WARN: no active WiFi connection found — skipping WiFi patch")
+
+    lan_ip = _get_host_lan_ip()
+    if lan_ip:
+        _patch_server_details(lan_ip)
+    else:
+        print("  [default] WARN: could not determine LAN IP — skipping server IP patch")
+
+
+# ── main ───────────────────────────────────────────────────────────────────────
+
 def main():
     cwd = Path.cwd().resolve()
     if cwd != ACMS and ACMS not in cwd.parents:
@@ -180,6 +312,8 @@ def main():
 
     if not args:
         run_all()
+    elif args[0] in ("--default", "-d"):
+        run_default()
     elif args[0] in ("--config", "-c"):
         if len(args) < 2:
             print("ERROR: --config/-c requires a path to a config.xml", file=sys.stderr)

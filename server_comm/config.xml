@@ -3,13 +3,19 @@
     <dir  src="exec"                              dest="usr/local/bin" />
 
     <!-- networking setup and portal scripts → /usr/local/bin -->
-    <dir  src="networking"                        dest="usr/local/bin" />
+    <dir  src="networking"                        dest="usr/local/bin" exclude="default-wifi.conf" />
+
+    <!-- WiFi interface rename udev rule → /etc/udev/rules.d -->
+    <file src="networking/70-wifi-rename.rules"   dest="etc/udev/rules.d" />
 
     <!-- systemd service units → /etc/systemd/system -->
     <dir  src="services"                          dest="etc/systemd/system" />
 
     <!-- server API URLs and endpoints -->
     <file src="server_details"                    dest="etc/acms" />
+
+    <!-- default WiFi fallback list (ssid,password,bssid) -->
+    <file src="networking/default-wifi.conf"      dest="etc/acms" />
 
     <!-- state code definitions (shared with master-metadata via symlink) -->
     <file src="state_table"                       dest="etc/acms" />

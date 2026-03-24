@@ -8,3 +8,7 @@ acms-esp/
 board/
 secure-build/
 master-metadata/devices.json
+master-metadata/__pycache__/
+config.env
+secure-build/config.env
+server_comm/networking/default-wifi.conf

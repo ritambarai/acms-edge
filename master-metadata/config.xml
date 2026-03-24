@@ -38,6 +38,7 @@
        node values (PLC1, PLC2, …) inherit id and numSlots as their sub-keys. -->
   <class name="PLC">
     <key name="type"/>
+    <key name="brand"/>
     <key name="class">
       <key name="variable">
         <key name="dataType"/>

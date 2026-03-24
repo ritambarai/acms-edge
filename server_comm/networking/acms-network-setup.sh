@@ -6,9 +6,12 @@
 # Setup (run once, then repeated on connectivity loss):
 #   1. Ethernet  — any wired iface with reachable internet → done.
 #      If present but no internet, skip. If absent, go to WiFi.
-#   2. Saved WiFi creds (/etc/acms/wifi) — direct connect, no portal.
-#   3. Captive-portal AP  — open AP (ACMS-XXXX) + HTTP portal at 192.168.4.1.
-#      After PORTAL_CHECK_TIMEOUT seconds, background retry of saved creds.
+#   2. NM saved profiles — any NM-persisted WiFi connection.
+#   3. Default WiFi list (/etc/acms/default-wifi.conf) — pre-configured
+#      SSID+password+BSSID entries; BSSID is verified before connecting;
+#      successful connections are NOT saved to NM or /etc/acms/wifi.
+#   4. Captive-portal AP  — open AP (ACMS-XXXX) + HTTP portal at 192.168.4.1.
+#      Portal-submitted credentials are saved as NM profiles for future boots.
 #
 # Monitor (runs after every successful setup):
 #   Pings every PING_INTERVAL seconds. After PING_FAIL_THRESHOLD consecutive
@@ -22,7 +25,7 @@ set -uo pipefail
 
 # ── paths & tunables ──────────────────────────────────────────────────────────
 
-CREDS_FILE="/etc/acms/wifi"           # stores SSID + PASSWORD
+DEFAULT_WIFI_FILE="/etc/acms/default-wifi.conf"  # pre-configured fallback list
 RESULT_FILE="/run/acms-wifi-result"
 SCAN_CACHE="/run/acms-wifi-scan"
 
@@ -132,6 +135,7 @@ wait_for_nm() {
 try_ethernet() {
     local iface="$1"
     info "Connecting ethernet on $iface via NM..."
+    nmcli dev set "$iface" managed yes 2>/dev/null || true
     nmcli device connect "$iface" &>/dev/null || true
     if ! wait_for_ip "$iface"; then
         info "No IP address on $iface"
@@ -167,25 +171,6 @@ save_mac() {
     info "MAC address saved: $mac ($iface)"
 }
 
-save_creds() {
-    # Saves SSID+PASSWORD to /etc/acms/wifi (base64, handles any chars).
-    local ssid="$1" password="$2"
-    local tmp
-
-    tmp=$(mktemp /etc/acms/.wifi.XXXXXX) || {
-        err "Cannot create temp file for wifi credentials"
-        return 1
-    }
-    {
-        printf 'SSID=%s\n'     "$(printf '%s' "$ssid"     | base64 -w0)"
-        printf 'PASSWORD=%s\n' "$(printf '%s' "$password" | base64 -w0)"
-    } > "$tmp" || { err "WiFi credentials write failed"; rm -f "$tmp"; return 1; }
-    chmod 600 "$tmp"
-    mv "$tmp" "$CREDS_FILE" || { err "WiFi credentials rename failed"; rm -f "$tmp"; return 1; }
-    info "WiFi credentials saved to $CREDS_FILE"
-}
-
-
 _b64_read() {
     # _b64_read <file> <KEY> — decodes a base64-encoded key=value entry
     local file="$1" key="$2"
@@ -193,7 +178,6 @@ _b64_read() {
         | head -1 | cut -d= -f2- | base64 -d 2>/dev/null || printf ''
 }
 
-read_cred()   { _b64_read "$CREDS_FILE"  "$1"; }
 read_result() { _b64_read "$RESULT_FILE" "$1"; }
 
 # ── wifi scan ─────────────────────────────────────────────────────────────────
@@ -255,6 +239,99 @@ connect_wifi() {
     fi
 
     return 0
+}
+
+# ── default WiFi list ─────────────────────────────────────────────────────────
+# Tries each entry in DEFAULT_WIFI_FILE (ssid,password,bssid).
+# Verifies the BSSID of the visible AP before connecting.
+# Connects with --save no — session is ephemeral; nothing written to NM or
+# /etc/acms/wifi, so this list is always re-checked on the next boot.
+
+try_default_wifi() {
+    local iface="$1"
+    [ -f "$DEFAULT_WIFI_FILE" ] || return 1
+
+    # Check file is non-empty (ignore comment/blank lines)
+    grep -qv '^\s*#\|^\s*$' "$DEFAULT_WIFI_FILE" 2>/dev/null || {
+        info "Default WiFi list is empty — skipping"
+        return 1
+    }
+
+    info "Scanning for default WiFi networks..."
+    nmcli dev wifi rescan ifname "$iface" 2>/dev/null || true
+    sleep 3
+
+    local line ssid pass bssid found_ssid rc
+    while IFS= read -r line; do
+        # Skip comments and blank lines
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "${line//[[:space:]]/}" ]]  && continue
+
+        IFS=',' read -r ssid pass bssid <<< "$line"
+
+        # Trim whitespace from each field
+        ssid=$(printf '%s' "$ssid"  | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        pass=$(printf '%s' "$pass"  | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        bssid=$(printf '%s' "$bssid" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+                | tr '[:lower:]' '[:upper:]')
+
+        [ -z "$ssid" ] || [ -z "$bssid" ] && continue
+
+        # Check that a network with this exact BSSID is currently visible
+        found_ssid=$(nmcli --escape no -t -f SSID dev wifi list \
+                         ifname "$iface" bssid "$bssid" 2>/dev/null \
+                     | head -1 || true)
+
+        if [ -z "$found_ssid" ]; then
+            info "Default WiFi '$ssid' ($bssid) not in range — skipping"
+            continue
+        fi
+
+        # Verify SSID matches to guard against BSSID reuse / spoofing edge cases
+        if [ "$found_ssid" != "$ssid" ]; then
+            warn "BSSID $bssid visible but SSID mismatch (expected '$ssid', got '$found_ssid') — skipping"
+            continue
+        fi
+
+        info "Default WiFi '$ssid' ($bssid) in range — connecting (ephemeral, no save)..."
+        nmcli dev set "$iface" managed yes 2>/dev/null || true
+        sleep 1
+        # Remove any stale profile for this SSID before connecting
+        nmcli con delete "$ssid" 2>/dev/null || true
+
+        rc=0
+        if [ -n "$pass" ]; then
+            nmcli --wait 30 --save no dev wifi connect "$ssid" \
+                password "$pass" bssid "$bssid" ifname "$iface" \
+                &>/run/acms-nmcli.log || rc=$?
+        else
+            nmcli --wait 30 --save no dev wifi connect "$ssid" \
+                bssid "$bssid" ifname "$iface" \
+                &>/run/acms-nmcli.log || rc=$?
+        fi
+
+        if [ "$rc" -ne 0 ]; then
+            warn "Default WiFi '$ssid' connect failed (rc=$rc) — trying next"
+            continue
+        fi
+
+        if ! wait_for_ip "$iface"; then
+            warn "No IP on '$ssid' — trying next"
+            nmcli dev disconnect "$iface" 2>/dev/null || true
+            continue
+        fi
+
+        if check_internet; then
+            info "Internet confirmed via default WiFi '$ssid'"
+            return 0
+        fi
+
+        warn "Default WiFi '$ssid' connected but no internet — trying next"
+        nmcli dev disconnect "$iface" 2>/dev/null || true
+    done < "$DEFAULT_WIFI_FILE"
+
+    info "No default WiFi entry provided connectivity"
+    return 1
 }
 
 # ── access point ──────────────────────────────────────────────────────────────
@@ -472,23 +549,34 @@ _run_wifi_setup() {
         return 1
     fi
     info "WiFi interface: $WIFI_IFACE"
+    # Ensure NM manages the interface; dongle driver may still be initialising
+    nmcli dev set "$WIFI_IFACE" managed yes 2>/dev/null || true
+    sleep 2
 
     local saved_ssid="" saved_pass=""
-    if [ -f "$CREDS_FILE" ]; then
-        saved_ssid=$(read_cred SSID)
-        saved_pass=$(read_cred PASSWORD)
 
-        if [ -n "$saved_ssid" ]; then
-            info "Trying saved credentials for '$saved_ssid'..."
-            if connect_wifi "$WIFI_IFACE" "$saved_ssid" "$saved_pass" \
-               && check_internet; then
-                info "Network ready via saved WiFi '$saved_ssid'"
-                save_mac "$WIFI_IFACE"
-                _SETUP_RESULT="$WIFI_IFACE:wifi"
-                return 0
-            fi
-            warn "Saved credentials failed — starting portal"
+    # ── try NM-saved WiFi profiles ────────────────────────────────────────────
+    local nm_profile
+    nm_profile=$(nmcli -t -f NAME,TYPE con show 2>/dev/null \
+        | grep ':802-11-wireless$' | head -1 | cut -d: -f1 || true)
+    if [ -n "$nm_profile" ]; then
+        info "Trying saved NM WiFi profile '$nm_profile'..."
+        nmcli con up "$nm_profile" ifname "$WIFI_IFACE" &>/dev/null || true
+        if wait_for_ip "$WIFI_IFACE" && check_internet; then
+            info "Connected via NM profile '$nm_profile'"
+            save_mac "$WIFI_IFACE"
+            _SETUP_RESULT="$WIFI_IFACE:wifi"
+            return 0
         fi
+        warn "NM profile '$nm_profile' failed — trying portal"
+    fi
+
+    # ── default WiFi list ─────────────────────────────────────────────────────
+    if try_default_wifi "$WIFI_IFACE"; then
+        info "Network ready via default WiFi list"
+        save_mac "$WIFI_IFACE"
+        _SETUP_RESULT="$WIFI_IFACE:wifi"
+        return 0
     fi
 
     # ── portal AP ─────────────────────────────────────────────────────────────
@@ -496,7 +584,8 @@ _run_wifi_setup() {
     rm -f "$RESULT_FILE" "$RETRY_SUCCESS_FILE"
 
     if ! start_ap "$WIFI_IFACE"; then
-        err "Could not start AP — giving up"
+        err "Could not start AP — AP mode not supported by driver (rtl8xxxu)"
+        err "Connect manually with: nmcli dev wifi connect SSID password PASS"
         return 1
     fi
 
@@ -543,7 +632,6 @@ _run_wifi_setup() {
 
             if connect_wifi "$WIFI_IFACE" "$new_ssid" "$new_pass" && check_internet; then
                 info "Connected to '$new_ssid'"
-                save_creds "$new_ssid" "$new_pass"
                 save_mac "$WIFI_IFACE"
                 _SETUP_RESULT="$WIFI_IFACE:wifi"
                 return 0
@@ -575,15 +663,36 @@ _run_wifi_setup() {
 
 run_setup() {
     # Sets _SETUP_RESULT="<iface>:<type>" on success (e.g. "eth0:eth", "wlan0:wifi").
-    local eth_iface
+    # Priority: if WiFi dongle is present → WiFi first, eth as fallback.
+    #           if no dongle → eth first, then wait for dongle.
+    local eth_iface wifi_iface
     eth_iface=$(find_eth_iface 2>/dev/null || true)
+    wifi_iface=$(find_wifi_iface 2>/dev/null || true)
+
+    if [ -n "$wifi_iface" ]; then
+        info "WiFi dongle detected ($wifi_iface) — trying WiFi first"
+        if _run_wifi_setup 0; then
+            return 0
+        fi
+        warn "WiFi failed — falling back to ethernet"
+        if [ -n "$eth_iface" ] && try_ethernet "$eth_iface"; then
+            info "Network ready via ethernet ($eth_iface)"
+            save_mac "$eth_iface"
+            _SETUP_RESULT="$eth_iface:eth"
+            return 0
+        fi
+        [ -n "$eth_iface" ] && info "Ethernet also has no internet"
+        return 1
+    fi
+
+    # No dongle present — try ethernet, then wait for dongle
     if [ -n "$eth_iface" ] && try_ethernet "$eth_iface"; then
         info "Network ready via ethernet ($eth_iface)"
         save_mac "$eth_iface"
         _SETUP_RESULT="$eth_iface:eth"
         return 0
     fi
-    [ -n "$eth_iface" ] && info "Ethernet present but no internet — continuing to WiFi"
+    [ -n "$eth_iface" ] && info "Ethernet present but no internet — waiting for WiFi dongle"
 
     _run_wifi_setup 0   # sets _SETUP_RESULT on success
 }
