@@ -310,10 +310,14 @@ try_default_wifi() {
                 &>/run/acms-nmcli.log || rc=$?
         fi
 
-        if [ "$rc" -ne 0 ]; then
+        # rc=2: nmcli timed out waiting for activation confirmation but the
+        # connection may have succeeded — NM sometimes activates after nmcli
+        # exits. Fall through to wait_for_ip to confirm rather than aborting.
+        if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
             warn "Default WiFi '$ssid' connect failed (rc=$rc) — trying next"
             continue
         fi
+        [ "$rc" -eq 2 ] && warn "Default WiFi '$ssid' nmcli rc=2 (timeout) — checking IP anyway"
 
         if ! wait_for_ip "$iface"; then
             warn "No IP on '$ssid' — trying next"
