@@ -277,50 +277,75 @@ try_default_wifi() {
 
         [ -z "$ssid" ] || [ -z "$bssid" ] && continue
 
-        # Check that a network with this exact BSSID is currently visible
-        found_ssid=$(nmcli --escape no -t -f SSID dev wifi list \
-                         ifname "$iface" bssid "$bssid" 2>/dev/null \
-                     | head -1 || true)
+        # Verify the AP is in range by checking that the SSID is visible from
+        # a BSSID belonging to the same physical device.  A dual-band router
+        # uses consecutive BSSIDs for its 2.4 GHz and 5 GHz radios (e.g.
+        # :2D and :2E), so we match on the first 5 octets only rather than
+        # the full BSSID.  This lets the board connect regardless of which
+        # radio it sees while still rejecting a rogue AP on a different OUI.
+        local bssid_prefix matched_bssid attempt
+        bssid_prefix="${bssid%:*}"   # strip last :XX  →  6C:4F:89:DA:15
 
-        if [ -z "$found_ssid" ]; then
+        matched_bssid=""
+        for attempt in 1 2; do
+            matched_bssid=$(nmcli --escape no -t -f SSID,BSSID dev wifi list \
+                                ifname "$iface" 2>/dev/null \
+                            | awk -F: -v ssid="$ssid" -v pfx="${bssid_prefix//:/:}" '
+                                {
+                                    # nmcli -t escapes colons in values; field 1 = SSID,
+                                    # remaining fields = BSSID octets
+                                    n = split($0, a, /:/); got_ssid = a[1]
+                                    got_bssid = a[2]":"a[3]":"a[4]":"a[5]":"a[6]":"a[7]
+                                    got_prefix = a[2]":"a[3]":"a[4]":"a[5]":"a[6]
+                                    if (got_ssid == ssid && got_prefix == pfx) {
+                                        print got_bssid; exit
+                                    }
+                                }' || true)
+            [ -n "$matched_bssid" ] && break
+            if [ "$attempt" -eq 1 ]; then
+                info "Default WiFi '$ssid' (prefix $bssid_prefix) not in initial scan — rescanning..."
+                nmcli dev wifi rescan ifname "$iface" 2>/dev/null || true
+                sleep 5
+            fi
+        done
+
+        if [ -z "$matched_bssid" ]; then
             info "Default WiFi '$ssid' ($bssid) not in range — skipping"
             continue
         fi
 
-        # Verify SSID matches to guard against BSSID reuse / spoofing edge cases
-        if [ "$found_ssid" != "$ssid" ]; then
-            warn "BSSID $bssid visible but SSID mismatch (expected '$ssid', got '$found_ssid') — skipping"
-            continue
-        fi
+        info "Default WiFi '$ssid' visible at BSSID $matched_bssid (configured $bssid)"
 
         info "Default WiFi '$ssid' ($bssid) in range — connecting (ephemeral, no save)..."
         nmcli dev set "$iface" managed yes 2>/dev/null || true
-        sleep 1
+        sleep 2
         # Remove any stale profile for this SSID before connecting
         nmcli con delete "$ssid" 2>/dev/null || true
 
+        # Connect without --save no: NM handles DHCP correctly only with a
+        # real (saveable) profile. We delete the profile immediately after
+        # confirming an IP, so it is never persisted to disk.
         rc=0
         if [ -n "$pass" ]; then
-            nmcli --wait 30 --save no dev wifi connect "$ssid" \
-                password "$pass" bssid "$bssid" ifname "$iface" \
+            nmcli --wait 30 dev wifi connect "$ssid" \
+                password "$pass" ifname "$iface" \
                 &>/run/acms-nmcli.log || rc=$?
         else
-            nmcli --wait 30 --save no dev wifi connect "$ssid" \
-                bssid "$bssid" ifname "$iface" \
+            nmcli --wait 30 dev wifi connect "$ssid" \
+                ifname "$iface" \
                 &>/run/acms-nmcli.log || rc=$?
         fi
 
-        # rc=2: nmcli timed out waiting for activation confirmation but the
-        # connection may have succeeded — NM sometimes activates after nmcli
-        # exits. Fall through to wait_for_ip to confirm rather than aborting.
         if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
             warn "Default WiFi '$ssid' connect failed (rc=$rc) — trying next"
+            nmcli con delete "$ssid" 2>/dev/null || true
             continue
         fi
-        [ "$rc" -eq 2 ] && warn "Default WiFi '$ssid' nmcli rc=2 (timeout) — checking IP anyway"
+        [ "$rc" -eq 2 ] && warn "Default WiFi '$ssid' nmcli rc=2 — checking IP anyway"
 
         if ! wait_for_ip "$iface"; then
             warn "No IP on '$ssid' — trying next"
+            nmcli con delete "$ssid" 2>/dev/null || true
             nmcli dev disconnect "$iface" 2>/dev/null || true
             continue
         fi
@@ -331,6 +356,7 @@ try_default_wifi() {
         fi
 
         warn "Default WiFi '$ssid' connected but no internet — trying next"
+        nmcli con delete "$ssid" 2>/dev/null || true
         nmcli dev disconnect "$iface" 2>/dev/null || true
     done < "$DEFAULT_WIFI_FILE"
 
@@ -437,9 +463,9 @@ start_ap() {
     ssid=$(ap_ssid "$iface")
     info "Starting AP '$ssid' on $iface..."
 
-    # Release interface from NM
+    # Release interface from NM; give it a moment to let go
     nmcli dev set "$iface" managed no 2>/dev/null || true
-    sleep 1
+    sleep 2
 
     ip link set "$iface" up || { err "Cannot bring up $iface"; return 1; }
     ip addr flush dev "$iface" 2>/dev/null || true
@@ -559,6 +585,25 @@ _run_wifi_setup() {
 
     local saved_ssid="" saved_pass=""
 
+    # ── purge NM profiles that shadow default-wifi entries ────────────────────
+    # If a previous default-wifi connection was saved to NM (e.g. from a prior
+    # session where autoconnect=no was set), remove it so it doesn't masquerade
+    # as a user-saved profile and bypass the default-wifi verification path.
+    if [ -f "$DEFAULT_WIFI_FILE" ]; then
+        while IFS= read -r line; do
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${line//[[:space:]]/}" ]] && continue
+            local _ssid
+            _ssid=$(printf '%s' "$line" | cut -d, -f1 \
+                    | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            [ -z "$_ssid" ] && continue
+            if nmcli -t -f NAME con show 2>/dev/null | grep -qxF "$_ssid"; then
+                info "Removing NM profile '$_ssid' (matches default-wifi entry)"
+                nmcli con delete "$_ssid" 2>/dev/null || true
+            fi
+        done < "$DEFAULT_WIFI_FILE"
+    fi
+
     # ── try NM-saved WiFi profiles ────────────────────────────────────────────
     local nm_profile
     nm_profile=$(nmcli -t -f NAME,TYPE con show 2>/dev/null \
@@ -635,7 +680,8 @@ _run_wifi_setup() {
             stop_ap
 
             if connect_wifi "$WIFI_IFACE" "$new_ssid" "$new_pass" && check_internet; then
-                info "Connected to '$new_ssid'"
+                stop_ap   # kill any AP processes still alive from the retry loop
+                info "Connected to '$new_ssid' — AP closed"
                 save_mac "$WIFI_IFACE"
                 _SETUP_RESULT="$WIFI_IFACE:wifi"
                 return 0
@@ -644,6 +690,11 @@ _run_wifi_setup() {
                 saved_ssid="$new_ssid"
                 saved_pass="$new_pass"
                 rm -f "$RESULT_FILE"
+                # Remove the failed NM profile so NM stops retrying it and it
+                # isn't picked up as a saved profile on the next boot.
+                nmcli con delete "$new_ssid" 2>/dev/null || true
+                nmcli dev disconnect "$WIFI_IFACE" 2>/dev/null || true
+                sleep 1
                 scan_wifi "$WIFI_IFACE"
                 start_ap "$WIFI_IFACE" || { err "AP restart failed"; return 1; }
                 retry_started=0

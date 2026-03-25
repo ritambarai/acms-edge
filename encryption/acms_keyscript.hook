@@ -1,0 +1,82 @@
+#!/bin/sh
+# acms_keyscript.hook  — initramfs-tools hook
+#
+# Bundles the ACMS SID keyscript and its runtime dependencies into the
+# initramfs so that LUKS2 root can be unlocked before pivot_root.
+#
+# Installed at: /etc/initramfs-tools/hooks/acms_keyscript
+# Copies into initramfs:
+#   /usr/lib/cryptsetup/scripts/acms-sid-key  (keyscript)
+#   /cryptroot/crypttab                       (written directly — bypasses cryptroot hook validation)
+#   /etc/acms/boot-temp-key                   (temp LUKS key — first boot only)
+#   /usr/bin/xxd                              (for SID hex conversion)
+#   /usr/bin/sha256sum                        (for key derivation)
+#
+# acms-encrypt.sh stages two helper files into /etc/acms/ before update-initramfs
+# runs, because /etc/acms/ is the only directory reliably visible in this hook's
+# chroot context:
+#   /etc/acms/acms-sid-key     — the keyscript (staged copy)
+#   /etc/acms/crypttab-entry   — the single crypttab line for this LUKS volume
+
+PREREQS="cryptroot"
+
+prereqs() { echo "${PREREQS}"; }
+
+case "$1" in
+    prereqs) prereqs; exit 0 ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+# ── keyscript ────────────────────────────────────────────────────────────────
+# Read from /etc/acms/acms-sid-key (staged by acms-encrypt.sh pre_update_initramfs).
+# Fall back to other known paths in case staging wasn't done.
+
+mkdir -p "${DESTDIR}/usr/lib/cryptsetup/scripts"
+if [ -f /etc/acms/acms-sid-key ]; then
+    install -m 755 /etc/acms/acms-sid-key \
+                   "${DESTDIR}/usr/lib/cryptsetup/scripts/acms-sid-key"
+elif [ -f /usr/lib/cryptsetup/scripts/acms-sid-key ]; then
+    install -m 755 /usr/lib/cryptsetup/scripts/acms-sid-key \
+                   "${DESTDIR}/usr/lib/cryptsetup/scripts/acms-sid-key"
+elif [ -f /etc/initramfs-tools/scripts/acms-sid-key ]; then
+    install -m 755 /etc/initramfs-tools/scripts/acms-sid-key \
+                   "${DESTDIR}/usr/lib/cryptsetup/scripts/acms-sid-key"
+fi
+
+# ── temp key (first-boot fallback) ───────────────────────────────────────────
+
+if [ -f /etc/acms/boot-temp-key ]; then
+    mkdir -p "${DESTDIR}/etc/acms"
+    install -m 600 /etc/acms/boot-temp-key \
+                   "${DESTDIR}/etc/acms/boot-temp-key"
+fi
+
+# ── cryptroot/crypttab ───────────────────────────────────────────────────────
+# The cryptroot build hook validates keyscript= entries and rejects ours with
+# "invalid value for 'keyscript' option" — leaving cryptroot/crypttab empty.
+# We run AFTER cryptroot (PREREQS="cryptroot") and write the entry directly,
+# bypassing that validation.
+#
+# acms-encrypt.sh writes /etc/acms/crypttab-entry (staged copy of the line)
+# so we don't have to parse /etc/crypttab (which may not be visible here).
+
+if [ -f /etc/acms/crypttab-entry ]; then
+    mkdir -p "${DESTDIR}/cryptroot"
+    cat /etc/acms/crypttab-entry >> "${DESTDIR}/cryptroot/crypttab"
+elif [ -f /etc/crypttab ]; then
+    mkdir -p "${DESTDIR}/cryptroot"
+    grep -v '^#' /etc/crypttab | grep 'keyscript' >> "${DESTDIR}/cryptroot/crypttab" || true
+fi
+
+# ── runtime binaries ─────────────────────────────────────────────────────────
+
+# xxd — may live in /usr/bin or /bin depending on distro
+if command -v xxd >/dev/null 2>&1; then
+    copy_exec "$(command -v xxd)" /usr/bin
+fi
+
+# sha256sum (coreutils)
+if command -v sha256sum >/dev/null 2>&1; then
+    copy_exec "$(command -v sha256sum)" /usr/bin
+fi

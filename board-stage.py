@@ -54,6 +54,7 @@ from pathlib import Path
 
 ACMS = Path.home() / "acms"
 BOARD = ACMS / "board"
+OVERLAY = ACMS / "secure-build" / "armbian-build" / "userpatches" / "overlay"
 CONF_FILE = ACMS / "board-stage"
 
 
@@ -90,7 +91,14 @@ def stage(src_path: Path, dest_dir: Path, dest_name: str):
     dest_dir.mkdir(parents=True, exist_ok=True)
     dst = dest_dir / dest_name
     shutil.copy2(src_path, dst)
-    print(f"  {src_path.relative_to(ACMS)}  →  board/{dest_dir.relative_to(BOARD)}/{dest_name}")
+    rel = dest_dir.relative_to(BOARD)
+    print(f"  {src_path.relative_to(ACMS)}  →  board/{rel}/{dest_name}")
+
+    # Mirror to armbian overlay if that path already exists there
+    overlay_dst = OVERLAY / rel / dest_name
+    if overlay_dst.exists():
+        shutil.copy2(src_path, overlay_dst)
+        print(f"  {src_path.relative_to(ACMS)}  →  overlay/{rel}/{dest_name}")
 
 
 def run_config(config_path: Path):
@@ -243,42 +251,77 @@ def _get_host_lan_ip():
 
 
 def _patch_default_wifi(ssid: str, password: str, bssid: str):
-    """Replace all non-comment entries in board/etc/acms/default-wifi.conf with the new entry."""
-    wifi_file = BOARD / 'etc' / 'acms' / 'default-wifi.conf'
-    if not wifi_file.exists():
-        print(f"  [default] WARN: {wifi_file} not found — skipping WiFi patch")
-        return
+    """Add or update host WiFi entry in default-wifi.conf (board + overlay).
 
-    lines = wifi_file.read_text().splitlines()
-    # Keep comment/blank lines; strip any existing data lines
-    kept = [l for l in lines if l.startswith('#') or not l.strip()]
-    # Remove trailing blank lines then add one blank + new entry
-    while kept and not kept[-1].strip():
-        kept.pop()
-    kept.append(f"{ssid},{password},{bssid}")
-    wifi_file.write_text('\n'.join(kept) + '\n')
-    print(f"  [default] default-wifi.conf  ← {ssid} ({bssid})")
+    If the SSID already exists, updates the password but preserves the existing
+    BSSID — the host may be on a different radio (e.g. 5 GHz) than the board
+    (e.g. 2.4 GHz) and the BSSID should not be silently overwritten.
+    If the SSID is new, appends a full entry using the host's BSSID.
+    """
+    new_content = None
+    for wifi_file in [
+        BOARD / 'etc' / 'acms' / 'default-wifi.conf',
+        OVERLAY / 'etc' / 'acms' / 'default-wifi.conf',
+    ]:
+        if not wifi_file.exists():
+            continue
+        if new_content is None:
+            lines = wifi_file.read_text().splitlines()
+            new_lines = []
+            updated = False
+            for line in lines:
+                if line.startswith('#') or not line.strip():
+                    new_lines.append(line)
+                    continue
+                parts = line.split(',', 2)
+                if parts[0].strip() == ssid:
+                    # SSID found — update password, preserve BSSID
+                    existing_bssid = parts[2].strip() if len(parts) > 2 else bssid
+                    new_lines.append(f"{ssid},{password},{existing_bssid}")
+                    if existing_bssid != bssid:
+                        print(f"  [default] NOTE: kept existing BSSID {existing_bssid} for '{ssid}' (host is on {bssid})")
+                    updated = True
+                else:
+                    new_lines.append(line)
+            if not updated:
+                # New SSID — append with host BSSID
+                while new_lines and not new_lines[-1].strip():
+                    new_lines.pop()
+                new_lines.append(f"{ssid},{password},{bssid}")
+            new_content = '\n'.join(new_lines) + '\n'
+        wifi_file.write_text(new_content)
+        label = "board" if BOARD in wifi_file.parents else "overlay"
+        print(f"  [default] default-wifi.conf ({label})  ← {ssid} updated")
+
+    if new_content is None:
+        print(f"  [default] WARN: default-wifi.conf not found in board/ or overlay/ — skipping WiFi patch")
 
 
 def _patch_server_details(lan_ip: str):
-    """Update SERVER_URL in board/etc/acms/server_details with the host's LAN IP."""
-    details_file = BOARD / 'etc' / 'acms' / 'server_details'
-    if not details_file.exists():
-        print(f"  [default] WARN: {details_file} not found — skipping server IP patch")
-        return
+    """Update SERVER_URL in server_details with the host's LAN IP (board + overlay)."""
+    new_content = None
+    for details_file in [
+        BOARD / 'etc' / 'acms' / 'server_details',
+        OVERLAY / 'etc' / 'acms' / 'server_details',
+    ]:
+        if not details_file.exists():
+            continue
+        lines = details_file.read_text().splitlines()
+        new_lines = []
+        for line in lines:
+            if line.startswith('SERVER_URL='):
+                m = re.match(r'SERVER_URL=https?://[^:/]+(:\d+)?(/.*)?', line)
+                port = m.group(1) or ':8000' if m else ':8000'
+                path = m.group(2) or ''      if m else ''
+                line = f"SERVER_URL=http://{lan_ip}{port}{path}"
+            new_lines.append(line)
+        new_content = '\n'.join(new_lines) + '\n'
+        details_file.write_text(new_content)
+        label = "board" if BOARD in details_file.parents else "overlay"
+        print(f"  [default] server_details ({label})  ← SERVER_URL=http://{lan_ip}:8000")
 
-    lines = details_file.read_text().splitlines()
-    new_lines = []
-    for line in lines:
-        if line.startswith('SERVER_URL='):
-            # Preserve existing port and path, replace only the host
-            m = re.match(r'SERVER_URL=https?://[^:/]+(:\d+)?(/.*)?', line)
-            port = m.group(1) or ':8000' if m else ':8000'
-            path = m.group(2) or ''      if m else ''
-            line = f"SERVER_URL=http://{lan_ip}{port}{path}"
-        new_lines.append(line)
-    details_file.write_text('\n'.join(new_lines) + '\n')
-    print(f"  [default] server_details     ← SERVER_URL=http://{lan_ip}:8000")
+    if new_content is None:
+        print(f"  [default] WARN: server_details not found in board/ or overlay/ — skipping server IP patch")
 
 
 def run_default():

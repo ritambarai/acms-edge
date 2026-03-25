@@ -1,0 +1,74 @@
+#!/bin/sh
+# acms-sid-key  — initramfs LUKS keyscript
+#
+# Called by cryptsetup-initramfs for the acms_cryptroot device.
+# Outputs the correct LUKS key to stdout (binary, no trailing newline).
+#
+# Called as: /scripts/acms-sid-key <device_path>
+# Environment: CRYPTTAB_SOURCE may also contain the LUKS device path.
+#
+# Boot logic:
+#   Subsequent boots: SID-derived key is in LUKS → output SID key → done.
+#   First boot:       temp key is the only LUKS key → output temp key → done.
+#   acms-secure-init.service promotes SID key and removes temp key after first boot.
+
+TEMP_KEY="/etc/acms/boot-temp-key"
+
+SID_PATHS="
+/sys/bus/nvmem/devices/sunxi-sid0/nvmem
+/sys/devices/platform/soc/1c23800.sid/nvmem/sunxi-sid0/nvmem
+"
+
+# The LUKS device — passed as $1 or via environment
+LUKS_DEV="${1:-${CRYPTTAB_SOURCE:-/dev/mmcblk0p2}}"
+
+# ── key derivation ────────────────────────────────────────────────────────────
+
+derive_sid_key() {
+    for p in ${SID_PATHS}; do
+        [ -r "$p" ] || continue
+        local hex
+        hex=$(xxd -p "$p" 2>/dev/null | tr -d '\n')
+        [ -z "$hex" ] && continue
+        # Reject all-zeroes SID (unprogrammed fuse)
+        case "$hex" in
+            *[1-9a-fA-F]*) ;;
+            *) continue ;;
+        esac
+        printf '%s' "$hex" | sha256sum | awk '{print $1}' | xxd -r -p
+        return 0
+    done
+    # Fallback: /proc/cpuinfo Serial
+    local serial
+    serial=$(grep -i "^serial" /proc/cpuinfo 2>/dev/null \
+             | awk -F': ' '{print $2}' | tr -d ' \n' || true)
+    if [ -n "$serial" ] && [ "$serial" != "0000000000000000" ]; then
+        printf '%s' "$serial" | sha256sum | awk '{print $1}' | xxd -r -p
+        return 0
+    fi
+    return 1
+}
+
+# ── main ──────────────────────────────────────────────────────────────────────
+
+# Try to derive the SID key first
+sid_key=""
+if sid_key=$(derive_sid_key 2>/dev/null); then
+    # Test if SID key actually works for this LUKS volume (subsequent boots)
+    if [ -b "$LUKS_DEV" ] && \
+       printf '%s' "$sid_key" | \
+           cryptsetup luksOpen --test-passphrase --key-file=- "$LUKS_DEV" 2>/dev/null; then
+        # SID key is valid — output it
+        printf '%s' "$sid_key"
+        exit 0
+    fi
+fi
+
+# SID key not in LUKS (first boot) or SID unavailable — fall back to temp key
+if [ -f "$TEMP_KEY" ]; then
+    cat "$TEMP_KEY"
+    exit 0
+fi
+
+# Nothing worked
+exit 1

@@ -1,19 +1,10 @@
 <board-stage>
-    <!-- initramfs hook: bundles cryptsetup binaries into the initramfs -->
-    <file src="acms_unlock.hook"   dest="etc/initramfs-tools/hooks"            name="acms_unlock" />
+    <!-- acms-secure-init: binds LUKS2 root to this board's SID on first boot -->
+    <file src="acms-secure-init.sh"      dest="usr/local/bin" />
+    <file src="acms-secure-init.service" dest="etc/systemd/system" />
 
-    <!-- initramfs early-boot script: reads SID, derives key, unlocks root -->
-    <file src="acms_unlock.script" dest="etc/initramfs-tools/scripts/local-top" name="acms_unlock" />
-
-    <!-- systemd service: mounts file-backed LUKS container (/secure.img → /data) at boot -->
-    <file src="acms-unlock.service" dest="etc/systemd/system" />
-
-    <!-- runtime script: called by acms-unlock.service to open and mount the LUKS container -->
-    <file src="unlock_luks.sh"     dest="usr/local/bin" />
-
-    <!-- one-time provisioning: migrates plain root partition to LUKS2 in-place -->
-    <file src="acms-migrate-root.sh" dest="usr/local/bin" />
-
-    <!-- one-time provisioning: creates the file-backed LUKS container (/secure.img) -->
-    <file src="setup_luks.sh"      dest="usr/local/bin" />
+    <!-- initramfs keyscript: derives LUKS key from Allwinner A20 SID fuse.
+         name= renames the file so initramfs-tools picks it up by the right path. -->
+    <file src="acms_keyscript.hook" dest="etc/initramfs-tools/hooks"   name="acms_keyscript" />
+    <file src="acms_sid_keyscript"  dest="etc/initramfs-tools/scripts" name="acms-sid-key" />
 </board-stage>

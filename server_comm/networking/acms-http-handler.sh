@@ -87,7 +87,7 @@ portal_page() {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ACMS Device Setup</title>
+  <title>ACMS Gateway Setup</title>
   <style>
     *,*::before,*::after{box-sizing:border-box}
     body{font-family:system-ui,sans-serif;background:#f0f2f5;
@@ -108,11 +108,17 @@ portal_page() {
     .status{margin-top:16px;padding:11px 14px;border-radius:6px;font-size:.88em;line-height:1.4}
     .ok{background:#d4edda;color:#155724}
     .err{background:#f8d7da;color:#721c24}
+    .pw-wrap{position:relative;margin-bottom:16px}
+    .pw-wrap input{margin-bottom:0;padding-right:42px}
+    .pw-eye{position:absolute;right:10px;top:50%;transform:translateY(-50%);
+            background:none;border:none;cursor:pointer;padding:4px;
+            color:#888;display:flex;align-items:center;user-select:none}
+    .pw-eye:hover{color:#333}
   </style>
 </head>
 <body>
 <div class="card">
-  <h1>ACMS Device Setup</h1>
+  <h1>ACMS Gateway Setup</h1>
   <p class="sub">Connect this device to a WiFi network.</p>
   <form method="POST" action="/connect">
     <label for="ss">WiFi Network</label>
@@ -125,8 +131,24 @@ $opts
     <input id="sm" name="ssid_manual" placeholder="Network name" maxlength="32">
 
     <label for="pw">Password</label>
-    <input id="pw" name="password" type="password"
-           placeholder="Leave blank for open networks">
+    <div class="pw-wrap">
+      <input id="pw" name="password" type="password"
+             placeholder="Leave blank for open networks">
+      <button type="button" class="pw-eye" id="eye"
+              onmousedown="document.getElementById('pw').type='text'"
+              onmouseup="document.getElementById('pw').type='password'"
+              onmouseleave="document.getElementById('pw').type='password'"
+              ontouchstart="document.getElementById('pw').type='text'"
+              ontouchend="document.getElementById('pw').type='password'"
+              aria-label="Hold to reveal password">
+        <svg id="eye-open" xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+             viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
 
     <button type="submit">Connect &amp; Save</button>
   </form>

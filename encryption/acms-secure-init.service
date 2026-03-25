@@ -1,0 +1,16 @@
+[Unit]
+Description=ACMS encrypted root re-keying (SID binding)
+Documentation=man:cryptsetup(8)
+DefaultDependencies=no
+# Root is already mounted by initramfs before systemd starts.
+# Run early, before network setup.
+After=local-fs.target
+Before=acms-network-setup.service network.target NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/acms-secure-init.sh
+
+[Install]
+WantedBy=basic.target
